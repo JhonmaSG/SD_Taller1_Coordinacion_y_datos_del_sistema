@@ -1,0 +1,23 @@
+# Según guía
+*.pem
+*.key
+.ssh/
+
+# Claves y secretos
+id_rsa*
+id_ed25519*
+known_hosts
+.env
+*.env
+!.env.example
+
+# Entorno
+__pycache__/
+*.pyc
+venv/
+.venv/
+node_modules/
+data/
+*.tmp
+.vscode/
+.idea/
