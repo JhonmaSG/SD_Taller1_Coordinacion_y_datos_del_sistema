@@ -92,6 +92,25 @@ Verás:
 ```powershell
 type $env:USERPROFILE\.ssh\id_ed25519_vm.pub | ssh node1@100.83.114.76 "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
 ```
+
+Como segunda opción si falla el comando anterior, (En Windows) usar:
+```powershell
+mkdir "$env:USERPROFILE\.ssh" -Force
+```
+
+```powershell
+ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\id_ed25519_vm" -C "acceso-nodos"
+```
+
+Verificar si fue creado exitosamente la llave:
+```powershell
+(optional) dir "$env:USERPROFILE\.ssh"
+```
+
+Volver a ejecutar el comando:
+```powershell
+type $env:USERPROFILE\.ssh\id_ed25519_vm.pub | ssh node1@100.83.114.76 "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+```
  
 ### Si sale `Connection refused`
  
