@@ -54,3 +54,63 @@ sudo systemctl start mongod
 ```bash
 Active: active (running) ...
 ```
+
+## 2. Réplica set de 3 miembros
+Para implementar la réplica set de 3 miembros en cada nodo, se debe seguir los siguientes pasos 
+
+1. Abrir el archivo de configuración de MongoDB en cada nodo
+```bash
+sudo nano /etc/mongod.conf
+```
+
+2. Buscar la sección `net` y modificar el parámetro `bindIp` para incluir la IP de Tailscale
+```YAML
+net:
+    port: 27017
+    bindIp: 127.0.0.1,100.x.x.x # Reemplazar por la IP que sale en la consola de Tailscale del nodo
+```
+
+3. Posteriormente, en la sección de replicación, se debe asignar un nombre al set de replicas
+```YAML
+replication:
+    replSetName: "rs-grupo"
+```
+
+4. Guardar el archivo y reiniciar el motor de MongoDB en los 3 nodos
+```bash
+sudo systemctl restart mongod
+```
+
+## 3. Iniciar el Set de Réplicas de 3 miembros
+
+1. Conectarse a la terminal de MongoDB
+```bash
+mongosh
+```
+
+2. Inicializar el set de replicas pasando las direcciones IP de Tailscale y el puerto `27017` (solo basta realizarlo con el nodo principal, el resto al conectarse a la consola de MongoDB se inicializarán automáticamente)
+
+```JavaScript
+rs.initiate({
+  _id: "rs-grupo",
+  members: [
+    { _id: 0, host: "100.x.x.1:27017" }, // IP del Nodo Principal (3GB)
+    { _id: 1, host: "100.x.x.2:27017" }, // IP del Nodo Réplica 1 (2GB)
+    { _id: 2, host: "100.x.x.3:27017" }  // IP del Nodo Réplica 2 (2GB)
+  ]
+})
+```
+
+Una vez reemplazados las IP's correspondientes y ejecutado el script de inicialización de las réplicas, nos deberá devolver un resultado JSON con `ok: 1`. Adicionalmente, ya el prompt no será `test>`, sino que cambiará a algo como `rs-grupo [direct: primary] test>` para el nodo principal del a base de datos. Para otros será de la siguiente manera:
+
+```JavaScript
+rs-grupo [direct: secondary] test>
+```
+
+3. Una vez realizado lo anterior, se verifica el set de replicas para comprobar que los 3 miembros ya están sincronizados y se comunican correctamente.
+
+```JavaScript
+rs.status()
+```
+
+Esto mostará la salud de los nodos y cual es el primario y cuales los secundarios
