@@ -79,6 +79,7 @@ replication:
 4. Guardar el archivo y reiniciar el motor de MongoDB en los 3 nodos
 ```bash
 sudo systemctl restart mongod
+sudo systemctl status mongod
 ```
 
 ## 3. Iniciar el Set de Réplicas de 3 miembros
@@ -114,3 +115,61 @@ rs.status()
 ```
 
 Esto mostará la salud de los nodos y cual es el primario y cuales los secundarios
+
+## 4. Probar que la replicación funciona
+No basta con que los tres servicios estén activos. Deben demostrar que una escritura realizada en el principal termina apareciendo en las réplicas.
+
+1. Insertar información en el PRIMARY
+Primero, se debe identificar cuál de los tres nodos tiene el rol PRIMARY mediante:
+```JavaScript
+rs.status()
+```
+
+Una vez identificado, se abre la terminal de MongoDB en dicho nodo:
+```bash
+mongosh
+```
+
+Ejecutar:
+```bash
+use ejemplo
+```
+
+Insertar un registro:
+```JavaScript
+db.inventario.insertOne(
+  {
+    nodo: "node-1",
+    cpu: 45,
+    ram: 60,
+    ancho_banda: 100,
+    fecha: new Date()
+  },
+  {
+    writeConcern: {
+      w: "majority",
+      wtimeout: 5000
+    }
+  }
+)
+```
+
+Se utiliza writeConcern: { w: "majority" } para garantizar que la escritura sea reconocida por la mayoría de los miembros del Replica Set. En un conjunto de tres miembros, se requiere el reconocimiento de al menos dos.
+
+La respuesta debe mostrar acknowledged: true y el identificador del documento insertado.
+
+2. Consultar la información desde las réplicas SECONDARY
+Desde un nodo de lectura ejecutar
+```bash
+mongosh "mongodb://100.x.x.1:27017,100.x.x.2:27017,100.x.x.3:27017/ejemplo?replicaSet=rs-grupo&readPreference=secondary"
+```
+Se deben reemplazar las direcciones de ejemplo por las IP reales de los tres nodos.
+
+```JavaScript
+db.inventario.find().pretty()
+```
+
+Se debe obtener el documento insertado anteriormente. El parámetro readPreference=secondary indica que las consultas deben dirigirse a los nodos secundarios.
+Se repite el procedimiento desde el otro nodo SECONDARY para comprobar que ambos recibieron la información.
+
+Resultado esperado: los tres miembros contienen el mismo documento, aunque puede existir un pequeño retraso debido a que la replicación de MongoDB es asíncrona.
