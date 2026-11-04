@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package election.v1;
+
+option go_package = "github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/election/v1;electionpb";
+
+// ElectionService transporta los mensajes del algoritmo Bully entre nodos.
+service ElectionService {
+  rpc RequestElection(RequestElectionRequest) returns (RequestElectionResponse);
+  rpc AnnounceCoordinator(AnnounceCoordinatorRequest) returns (AnnounceCoordinatorResponse);
+}
+
+message Node {
+  uint64 id = 1;
+  string address = 2;
+}
+
+message RequestElectionRequest {
+  Node sender = 1;
+}
+
+message RequestElectionResponse {
+  bool acknowledged = 1;
+}
+
+message AnnounceCoordinatorRequest {
+  Node sender = 1;
+  Node coordinator = 2;
+}
+
+message AnnounceCoordinatorResponse {
+  bool accepted = 1;
+}
