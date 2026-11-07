@@ -13,7 +13,7 @@ import (
 
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/adapters/config"
 	grpcadapter "github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/adapters/grpc"
-	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/adapters/mongodb"
+	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/adapters/persistence"
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/domain/usecase"
 )
 
@@ -107,6 +107,30 @@ func run() error {
 	repository := initializeRepository(cfg)
 	if repository != nil {
 		defer closeRepository(repository)
+		registerNode, registerErr := usecase.NewRegisterNodeUseCase(membership, election, repository)
+		if registerErr != nil {
+			log.Printf("node registration unavailable: %v", registerErr)
+		} else {
+			registerContext, cancelRegister := context.WithTimeout(context.Background(), mongoStartupTimeout)
+			_, registerErr = registerNode.Register(registerContext)
+			cancelRegister()
+			if registerErr != nil {
+				log.Printf("node document registration failed: %v", registerErr)
+			} else {
+				go func() {
+					if err := registerNode.Run(runtimeContext, cfg.HeartbeatInterval); err != nil && !errors.Is(err, context.Canceled) {
+						log.Printf("node document role monitor stopped: %v", err)
+					}
+				}()
+				defer func() {
+					offlineContext, cancelOffline := context.WithTimeout(context.Background(), mongoCloseTimeout)
+					defer cancelOffline()
+					if err := registerNode.MarkOffline(offlineContext); err != nil {
+						log.Printf("mark node offline: %v", err)
+					}
+				}()
+			}
+		}
 	}
 
 	log.Printf(
@@ -114,7 +138,7 @@ func run() error {
 		cfg.LocalNode.ID,
 		len(cfg.Peers),
 		cfg.DatabaseName,
-		cfg.ResourceTable,
+		cfg.NodeCollection,
 		cfg.HeartbeatInterval,
 	)
 
@@ -150,15 +174,15 @@ func startElection(election *usecase.BullyElectionUseCase, timeout time.Duration
 	return nil
 }
 
-func initializeRepository(cfg config.Config) *mongodb.ResourceRepository {
+func initializeRepository(cfg config.Config) *persistence.MongoNodeDocumentRepository {
 	mongoContext, cancelMongo := context.WithTimeout(context.Background(), mongoStartupTimeout)
 	defer cancelMongo()
 
-	repository, err := mongodb.NewResourceRepository(
+	repository, err := persistence.NewMongoNodeDocumentRepository(
 		mongoContext,
 		cfg.DatabaseURI,
 		cfg.DatabaseName,
-		cfg.ResourceTable,
+		cfg.NodeCollection,
 	)
 	if err != nil {
 		log.Printf(
@@ -168,11 +192,11 @@ func initializeRepository(cfg config.Config) *mongodb.ResourceRepository {
 		return nil
 	}
 
-	log.Printf("MongoDB connection ready for %s.%s", cfg.DatabaseName, cfg.ResourceTable)
+	log.Printf("MongoDB connection ready for %s.%s", cfg.DatabaseName, cfg.NodeCollection)
 	return repository
 }
 
-func closeRepository(repository *mongodb.ResourceRepository) {
+func closeRepository(repository *persistence.MongoNodeDocumentRepository) {
 	closeContext, cancelClose := context.WithTimeout(context.Background(), mongoCloseTimeout)
 	defer cancelClose()
 

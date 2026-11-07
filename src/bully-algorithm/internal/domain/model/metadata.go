@@ -12,7 +12,7 @@ type Metadata struct {
 func NewMetadata(nodeID NodeID, lamport LamportTime) Metadata {
 	return Metadata{
 		Lamport:       lamport,
-		VersionVector: VersionVector{nodeID: 1},
+		VersionVector: VersionVector{nodeID.Key(): 1},
 		UpdatedBy:     nodeID,
 	}
 }

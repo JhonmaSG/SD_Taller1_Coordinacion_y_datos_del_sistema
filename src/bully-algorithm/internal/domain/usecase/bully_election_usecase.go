@@ -214,6 +214,26 @@ func (uc *BullyElectionUseCase) HandleElection(ctx context.Context, candidate mo
 	return true, nil
 }
 
+// CurrentCoordinator devuelve el coordinador observado actualmente.
+func (uc *BullyElectionUseCase) CurrentCoordinator() (model.Node, bool) {
+	uc.mu.RLock()
+	defer uc.mu.RUnlock()
+
+	if uc.coordinator == nil {
+		return model.Node{}, false
+	}
+
+	return *uc.coordinator, true
+}
+
+// IsLocalCoordinator indica si el nodo local puede aceptar escrituras.
+func (uc *BullyElectionUseCase) IsLocalCoordinator() bool {
+	local := uc.membership.LocalNode()
+	result := uc.CurrentResult()
+	return result.State == model.ElectionCoordinator &&
+		result.Coordinator != nil && result.Coordinator.SameIdentity(local)
+}
+
 // CurrentResult permite consultar el último estado sin modificarlo.
 func (uc *BullyElectionUseCase) CurrentResult() model.ElectionResult {
 	uc.mu.RLock()

@@ -1,6 +1,9 @@
 package model
 
-import "errors"
+import (
+	"errors"
+	"strconv"
+)
 
 // NodeID identifica de forma única un nodo del sistema distribuido.
 type NodeID uint64
@@ -11,6 +14,11 @@ type NodeID uint64
 type Node struct {
 	ID      NodeID
 	Address string
+}
+
+// Key devuelve la identidad textual usada en vectores y persistencia.
+func (id NodeID) Key() string {
+	return "node_" + strconv.FormatUint(uint64(id), 10)
 }
 
 // Validate comprueba las invariantes que el dominio necesita para ordenar nodos.

@@ -49,7 +49,7 @@ TIMEOUT_MS=3000
 HEARTBEAT_MS=1000
 DB_URI=mongodb://100.x.x.1:27017,100.x.x.2:27017,100.x.x.3:27017/?replicaSet=rs-grupo
 DB_NAME=inventory
-DB_COLLECTION=resources
+DB_NODE_COLLECTION=nodes
 ```
 
 ### Identidad y dirección
@@ -433,7 +433,7 @@ mongo.Connect(options.Client().ApplyURI(DB_URI))
 client.Ping(ctx, nil)
   │
   ▼
-client.Database(DB_NAME).Collection(DB_COLLECTION)
+client.Database(DB_NAME).Collection(DB_NODE_COLLECTION)
 ```
 
 El driver mantiene un pool de conexiones y MongoDB decide qué miembro del
@@ -580,7 +580,7 @@ Nodo 3 → 127.0.0.1:5003
 ```
 
 Cada proceso recibe una membresía completa y el nodo 3 tiene la prioridad más
-alta. El script reutiliza `DB_URI`, `DB_NAME`, `DB_COLLECTION`, `TIMEOUT_MS` y
+alta. El script reutiliza `DB_URI`, `DB_NAME`, `DB_NODE_COLLECTION`, `TIMEOUT_MS` y
 `HEARTBEAT_MS` desde `src/bully-algorithm/.env`.
 
 Desde Git Bash o WSL, ejecutar en la raíz del repositorio:
@@ -650,3 +650,90 @@ Si el coordinador 2 se apaga mientras el nodo 1 está activo:
 
 El monitor se inicia desde `cmd/main.go` después de la elección inicial y se
 detiene mediante el mismo contexto de apagado ordenado del servidor gRPC.
+
+## 13. Documentos por nodo y control de concurrencia
+
+La persistencia de nodos usa la colección configurada por
+`DB_NODE_COLLECTION`, cuyo valor predeterminado es `nodes`. Cada proceso
+registra únicamente su propio documento lógico; MongoDB Replica Set replica ese
+documento entre sus miembros.
+
+Ejemplo persistido:
+
+```json
+{
+  "_id": "node_1",
+  "node_role": "COORDINATOR",
+  "resources": {
+    "cpu_cores": 2,
+    "memory_gb": 3,
+    "bandwidth_mbps": 1000
+  },
+  "status": "ONLINE",
+  "metadata": {
+    "lamport_clock": 15,
+    "version_vector": {
+      "node_1": 6,
+      "node_2": 2,
+      "node_3": 2
+    },
+    "last_modified_by": "node_1"
+  }
+}
+```
+
+Los modelos de dominio están en:
+
+```text
+internal/domain/model/node_document.go
+internal/domain/model/lamport.go
+internal/domain/model/version_vector.go
+internal/domain/model/metadata.go
+```
+
+El caso de uso de actualización está en:
+
+```text
+internal/domain/usecase/update_node_resources_usecase.go
+```
+
+Antes de modificar recursos, el caso de uso:
+
+1. Verifica mediante `CoordinatorView` que el nodo local sea el coordinador.
+2. Lee el documento actual mediante `NodeDocumentRepository`.
+3. Observa el Lamport remoto y avanza el reloj para el evento local.
+4. Incrementa el contador `version_vector[node_id]`.
+5. Actualiza `last_modified_by`.
+6. Intenta el reemplazo atómico con el metadata leído como precondición.
+7. Reintenta conflictos de versión limitadamente, sin sobrescribir una
+   modificación concurrente a ciegas.
+
+El puerto es:
+
+```text
+internal/ports/node_document_repository.go
+```
+
+Y el adaptador MongoDB es:
+
+```text
+internal/adapters/persistence/mongo_repository.go
+```
+
+El adaptador filtra la operación por `_id` y por:
+
+```text
+metadata.lamport_clock
+metadata.version_vector
+metadata.last_modified_by
+```
+
+Si esos valores cambiaron desde la lectura, MongoDB no actualiza el documento y
+el adaptador devuelve `ErrVersionConflict`.
+
+El dominio no contiene imports de MongoDB ni tags BSON. El mapeo entre
+`NodeID(1)` y `node_1` ocurre exclusivamente en el adaptador.
+
+El repositorio anterior de recursos individuales se conserva para compatibilidad
+con código legado, pero el flujo de documentos por nodo utiliza
+`MongoNodeDocumentRepository` y la colección `nodes`.

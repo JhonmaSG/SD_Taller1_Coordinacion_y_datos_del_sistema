@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -121,8 +120,8 @@ func (r *ResourceRepository) Save(ctx context.Context, resource model.Resource) 
 
 func toDocument(resource model.Resource) resourceDocument {
 	versions := make(map[string]uint64, len(resource.Metadata.VersionVector))
-	for nodeID, counter := range resource.Metadata.VersionVector {
-		versions[strconv.FormatUint(uint64(nodeID), 10)] = counter
+	for nodeKey, counter := range resource.Metadata.VersionVector {
+		versions[nodeKey] = counter
 	}
 
 	return resourceDocument{
@@ -139,12 +138,8 @@ func toDocument(resource model.Resource) resourceDocument {
 
 func fromDocument(document resourceDocument) (model.Resource, error) {
 	versions := make(model.VersionVector, len(document.Metadata.VersionVector))
-	for rawNodeID, counter := range document.Metadata.VersionVector {
-		nodeID, err := strconv.ParseUint(rawNodeID, 10, 64)
-		if err != nil || nodeID == 0 {
-			return model.Resource{}, fmt.Errorf("invalid version vector node id %q", rawNodeID)
-		}
-		versions[model.NodeID(nodeID)] = counter
+	for nodeKey, counter := range document.Metadata.VersionVector {
+		versions[nodeKey] = counter
 	}
 
 	resource := model.Resource{

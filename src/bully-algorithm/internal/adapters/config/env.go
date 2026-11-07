@@ -19,7 +19,7 @@ const (
 	defaultTimeoutMillis   = 3000
 	defaultHeartbeatMillis = 1000
 	defaultDatabaseName    = "inventory"
-	defaultResourceTable   = "resources"
+	defaultNodeCollection  = "nodes"
 )
 
 // Config contiene la configuración necesaria para ensamblar un nodo.
@@ -31,7 +31,7 @@ type Config struct {
 	HeartbeatInterval time.Duration
 	DatabaseURI       string
 	DatabaseName      string
-	ResourceTable     string
+	NodeCollection    string
 }
 
 // StaticMembership implementa la membresía desde configuración estática.
@@ -134,9 +134,9 @@ func LoadFromEnv() (Config, error) {
 	}
 
 	databaseName := valueOrDefault("DB_NAME", defaultDatabaseName)
-	resourceTable := valueOrDefault("DB_COLLECTION", defaultResourceTable)
-	if databaseName == "" || resourceTable == "" {
-		return Config{}, errors.New("DB_NAME and DB_COLLECTION must not be empty")
+	nodeCollection := valueOrDefault("DB_NODE_COLLECTION", defaultNodeCollection)
+	if databaseName == "" || nodeCollection == "" {
+		return Config{}, errors.New("DB_NAME and DB_NODE_COLLECTION must not be empty")
 	}
 
 	local := model.Node{ID: model.NodeID(nodeID), Address: localAddress}
@@ -153,7 +153,7 @@ func LoadFromEnv() (Config, error) {
 		HeartbeatInterval: time.Duration(heartbeatMillis) * time.Millisecond,
 		DatabaseURI:       databaseURI,
 		DatabaseName:      databaseName,
-		ResourceTable:     resourceTable,
+		NodeCollection:    nodeCollection,
 	}, nil
 }
 

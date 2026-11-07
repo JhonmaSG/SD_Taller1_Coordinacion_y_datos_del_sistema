@@ -1,8 +1,9 @@
 package model
 
-// VersionVector relaciona cada nodo con el contador de versiones que ha
-// generado para un recurso.
-type VersionVector map[NodeID]uint64
+// VersionVector relaciona la clave estable de cada nodo con el contador de
+// versiones que ha generado. La representación textual node_1/node_2 se
+// mantiene en el dominio para coincidir con el documento persistido.
+type VersionVector map[string]uint64
 
 // VersionRelation describe la relación parcial entre dos vectores.
 type VersionRelation uint8
@@ -30,7 +31,7 @@ func (v VersionVector) Increment(nodeID NodeID) {
 		return
 	}
 
-	v[nodeID]++
+	v[nodeID.Key()]++
 }
 
 // Merge combina dos vectores tomando el contador máximo de cada nodo.
