@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -82,6 +83,7 @@ func (t *ElectionTransport) AnnounceCoordinator(
 
 	conn, err := t.dial(ctx, to.Address)
 	if err != nil {
+		log.Printf("COORDINATOR failed sender=%d coordinator=%d target=%d address=%s phase=dial error=%v", from.ID, coordinator.ID, to.ID, to.Address, err)
 		return err
 	}
 	defer conn.Close()
@@ -91,12 +93,16 @@ func (t *ElectionTransport) AnnounceCoordinator(
 		Coordinator: toProtoNode(coordinator),
 	}, grpc.WaitForReady(true))
 	if err != nil {
+		log.Printf("COORDINATOR failed sender=%d coordinator=%d target=%d address=%s phase=rpc error=%v", from.ID, coordinator.ID, to.ID, to.Address, err)
 		return err
 	}
 	if !response.GetAccepted() {
-		return errors.New("coordinator announcement was rejected")
+		err := errors.New("coordinator announcement was rejected")
+		log.Printf("COORDINATOR failed sender=%d coordinator=%d target=%d address=%s phase=response error=%v", from.ID, coordinator.ID, to.ID, to.Address, err)
+		return err
 	}
 
+	log.Printf("COORDINATOR sent sender=%d coordinator=%d target=%d address=%s", from.ID, coordinator.ID, to.ID, to.Address)
 	return nil
 }
 
@@ -136,4 +142,36 @@ func fromProtoNode(node *electionpb.Node) (model.Node, error) {
 	}
 
 	return converted, nil
+}
+
+// SendHeartbeat implementa ports.ElectionTransportPort.
+func (t *ElectionTransport) SendHeartbeat(
+	ctx context.Context,
+	from, coordinator model.Node,
+) (bool, error) {
+	if ctx == nil {
+		return false, errors.New("context must not be nil")
+	}
+	if err := from.Validate(); err != nil {
+		return false, fmt.Errorf("invalid heartbeat sender: %w", err)
+	}
+	if err := validatePeer(coordinator); err != nil {
+		return false, err
+	}
+
+	conn, err := t.dial(ctx, coordinator.Address)
+	if err != nil {
+		return false, fmt.Errorf("heartbeat dial to node %d: %w", coordinator.ID, err)
+	}
+	defer conn.Close()
+
+	response, err := electionpb.NewElectionServiceClient(conn).ProcessHeartbeat(ctx, &electionpb.ProcessHeartbeatRequest{
+		Sender:      toProtoNode(from),
+		Coordinator: toProtoNode(coordinator),
+	}, grpc.WaitForReady(true))
+	if err != nil {
+		return false, fmt.Errorf("heartbeat RPC to node %d: %w", coordinator.ID, err)
+	}
+
+	return response.GetAlive(), nil
 }

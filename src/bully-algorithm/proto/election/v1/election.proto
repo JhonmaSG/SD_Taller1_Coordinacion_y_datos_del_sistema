@@ -8,6 +8,7 @@ option go_package = "github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sis
 service ElectionService {
   rpc RequestElection(RequestElectionRequest) returns (RequestElectionResponse);
   rpc AnnounceCoordinator(AnnounceCoordinatorRequest) returns (AnnounceCoordinatorResponse);
+  rpc ProcessHeartbeat(ProcessHeartbeatRequest) returns (ProcessHeartbeatResponse);
 }
 
 message Node {
@@ -30,4 +31,13 @@ message AnnounceCoordinatorRequest {
 
 message AnnounceCoordinatorResponse {
   bool accepted = 1;
+}
+
+message ProcessHeartbeatRequest {
+  Node sender = 1;
+  Node coordinator = 2;
+}
+
+message ProcessHeartbeatResponse {
+  bool alive = 1;
 }

@@ -21,3 +21,6 @@ data/
 *.tmp
 .vscode/
 .idea/
+
+# Ejecución local de los nodos distribuidos
+.runtime/

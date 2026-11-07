@@ -49,35 +49,27 @@ func run() error {
 	}
 
 	transport := grpcadapter.NewElectionTransport()
-	election, err := usecase.NewBullyElectionUseCase(membership, transport)
+	election, err := usecase.NewBullyElectionUseCaseWithTimeout(
+		membership,
+		transport,
+		cfg.ElectionTimeout,
+	)
 	if err != nil {
 		return fmt.Errorf("create election use case: %w", err)
 	}
 
-	// La conexión se inicializa aunque todavía no exista un caso de uso de
-	// inventario. De esta forma el proceso falla temprano si el Replica Set no
-	// está disponible y deja el repositorio listo para los siguientes casos de
-	// uso.
-	mongoContext, cancelMongo := context.WithTimeout(context.Background(), mongoStartupTimeout)
-	repository, err := mongodb.NewResourceRepository(
-		mongoContext,
-		cfg.DatabaseURI,
-		cfg.DatabaseName,
-		cfg.ResourceTable,
+	heartbeat, err := usecase.NewProcessHeartbeatUseCase(
+		membership,
+		transport,
+		election,
+		cfg.HeartbeatInterval,
+		cfg.ElectionTimeout,
 	)
-	cancelMongo()
 	if err != nil {
-		return fmt.Errorf("initialize MongoDB repository: %w", err)
+		return fmt.Errorf("create heartbeat use case: %w", err)
 	}
-	defer func() {
-		closeContext, cancelClose := context.WithTimeout(context.Background(), mongoCloseTimeout)
-		defer cancelClose()
-		if err := repository.Close(closeContext); err != nil {
-			log.Printf("close MongoDB repository: %v", err)
-		}
-	}()
 
-	electionServer, err := grpcadapter.NewElectionServer(election)
+	electionServer, err := grpcadapter.NewElectionServer(election, heartbeat)
 	if err != nil {
 		return fmt.Errorf("create gRPC server adapter: %w", err)
 	}
@@ -99,15 +91,34 @@ func run() error {
 		return err
 	}
 
+	// El monitor de heartbeats detecta la caída del coordinador y dispara una
+	// nueva elección sin depender de que el proceso reciba tráfico entrante.
+	runtimeContext, stopRuntime := context.WithCancel(context.Background())
+	defer stopRuntime()
+	go func() {
+		if err := heartbeat.Run(runtimeContext); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("heartbeat monitor stopped: %v", err)
+		}
+	}()
+
+	// MongoDB pertenece al plano de datos. Se intenta inicializar después de la
+	// elección y su indisponibilidad deja al nodo en modo degradado, sin impedir
+	// que participe en Bully o atienda mensajes de otros nodos.
+	repository := initializeRepository(cfg)
+	if repository != nil {
+		defer closeRepository(repository)
+	}
+
 	log.Printf(
-		"node %d started with %d peer(s), MongoDB database=%s collection=%s",
+		"node %d started with %d peer(s), MongoDB database=%s collection=%s heartbeat=%s",
 		cfg.LocalNode.ID,
 		len(cfg.Peers),
 		cfg.DatabaseName,
 		cfg.ResourceTable,
+		cfg.HeartbeatInterval,
 	)
 
-	return waitForShutdown(grpcServer, serverErrors)
+	return waitForShutdown(grpcServer, serverErrors, stopRuntime)
 }
 
 func startElection(election *usecase.BullyElectionUseCase, timeout time.Duration) error {
@@ -139,19 +150,56 @@ func startElection(election *usecase.BullyElectionUseCase, timeout time.Duration
 	return nil
 }
 
-func waitForShutdown(grpcServer interface{ GracefulStop() }, serverErrors <-chan error) error {
+func initializeRepository(cfg config.Config) *mongodb.ResourceRepository {
+	mongoContext, cancelMongo := context.WithTimeout(context.Background(), mongoStartupTimeout)
+	defer cancelMongo()
+
+	repository, err := mongodb.NewResourceRepository(
+		mongoContext,
+		cfg.DatabaseURI,
+		cfg.DatabaseName,
+		cfg.ResourceTable,
+	)
+	if err != nil {
+		log.Printf(
+			"MongoDB unavailable, node continues in degraded mode; inventory operations are disabled: %v",
+			err,
+		)
+		return nil
+	}
+
+	log.Printf("MongoDB connection ready for %s.%s", cfg.DatabaseName, cfg.ResourceTable)
+	return repository
+}
+
+func closeRepository(repository *mongodb.ResourceRepository) {
+	closeContext, cancelClose := context.WithTimeout(context.Background(), mongoCloseTimeout)
+	defer cancelClose()
+
+	if err := repository.Close(closeContext); err != nil {
+		log.Printf("close MongoDB repository: %v", err)
+	}
+}
+
+func waitForShutdown(
+	grpcServer interface{ GracefulStop() },
+	serverErrors <-chan error,
+	stopRuntime context.CancelFunc,
+) error {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
 
 	select {
 	case err := <-serverErrors:
+		stopRuntime()
 		if err != nil {
 			return fmt.Errorf("gRPC server: %w", err)
 		}
 		return nil
 	case received := <-signals:
 		log.Printf("received %s, stopping gracefully", received)
+		stopRuntime()
 		grpcServer.GracefulStop()
 		return nil
 	}

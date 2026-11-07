@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/domain/model"
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/ports"
@@ -18,17 +19,33 @@ type BullyElectionUseCase struct {
 	membership ports.MembershipPort
 	transport  ports.ElectionTransportPort
 
+	// electionTimeout limita cada ronda iniciada por el nodo, incluidas las
+	// rondas disparadas al recibir ELECTION. Un peer caído nunca debe dejar una
+	// goroutine de elección esperando indefinidamente.
+	electionTimeout time.Duration
+
 	mu          sync.RWMutex
 	inProgress  bool
 	lastResult  model.ElectionResult
 	coordinator *model.Node
 }
 
-// NewBullyElectionUseCase construye el caso de uso con sus dependencias de
-// entrada/salida.
+// NewBullyElectionUseCase construye el caso de uso con un timeout seguro para
+// las elecciones disparadas por mensajes entrantes.
 func NewBullyElectionUseCase(
 	membership ports.MembershipPort,
 	transport ports.ElectionTransportPort,
+) (*BullyElectionUseCase, error) {
+	return NewBullyElectionUseCaseWithTimeout(membership, transport, 3*time.Second)
+}
+
+// NewBullyElectionUseCaseWithTimeout permite que la infraestructura inyecte el
+// timeout configurado para el nodo sin acoplar el dominio a variables de
+// entorno o archivos de configuración.
+func NewBullyElectionUseCaseWithTimeout(
+	membership ports.MembershipPort,
+	transport ports.ElectionTransportPort,
+	electionTimeout time.Duration,
 ) (*BullyElectionUseCase, error) {
 	if membership == nil {
 		return nil, errors.New("membership port must not be nil")
@@ -36,11 +53,15 @@ func NewBullyElectionUseCase(
 	if transport == nil {
 		return nil, errors.New("election transport port must not be nil")
 	}
+	if electionTimeout <= 0 {
+		return nil, errors.New("election timeout must be greater than zero")
+	}
 
 	return &BullyElectionUseCase{
-		membership: membership,
-		transport:  transport,
-		lastResult: model.ElectionResult{State: model.ElectionIdle},
+		membership:      membership,
+		transport:       transport,
+		electionTimeout: electionTimeout,
+		lastResult:      model.ElectionResult{State: model.ElectionIdle},
 	}, nil
 }
 
@@ -76,7 +97,11 @@ func (uc *BullyElectionUseCase) Start(ctx context.Context) (model.ElectionResult
 	higherPriority := filterHigherPriority(local, peers)
 	acknowledged := uc.requestElection(ctx, local, higherPriority)
 
-	if err := ctx.Err(); err != nil {
+	// El vencimiento del contexto es el resultado esperado cuando uno o más
+	// peers no responden. Esos peers se consideran caídos y no deben impedir que
+	// el nodo local se proclame coordinador. Solo una cancelación explícita del
+	// contexto aborta la elección.
+	if err := ctx.Err(); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		uc.finishWithState(model.ElectionIdle, nil)
 		return model.ElectionResult{}, err
 	}
@@ -105,7 +130,17 @@ func (uc *BullyElectionUseCase) Start(ctx context.Context) (model.ElectionResult
 	}
 	uc.mu.Unlock()
 
-	failures := uc.announceCoordinator(ctx, local, peers)
+	// La fase de anuncios tiene su propio timeout. Si la consulta a los peers
+	// superiores consumió todo el timeout de la elección, reutilizar ctx aquí
+	// provocaría que todos los COORDINATOR fallaran inmediatamente aunque el
+	// peer esté disponible.
+	announcementContext, cancelAnnouncement := context.WithTimeout(
+		context.Background(),
+		uc.electionTimeout,
+	)
+	defer cancelAnnouncement()
+
+	failures := uc.announceCoordinator(announcementContext, local, peers)
 	uc.mu.Lock()
 	uc.lastResult.AnnouncementFailures = failures
 	result := uc.lastResult.Clone()
@@ -171,7 +206,9 @@ func (uc *BullyElectionUseCase) HandleElection(ctx context.Context, candidate mo
 	}
 
 	go func() {
-		_, _ = uc.Start(context.Background())
+		electionContext, cancel := context.WithTimeout(context.Background(), uc.electionTimeout)
+		defer cancel()
+		_, _ = uc.Start(electionContext)
 	}()
 
 	return true, nil
@@ -243,15 +280,22 @@ func (uc *BullyElectionUseCase) announceCoordinator(
 	}
 
 	failed := make(map[model.NodeID]bool)
+	completed := make(map[model.NodeID]bool)
 	for range peers {
 		select {
 		case result := <-results:
+			completed[result.id] = true
 			if result.failure {
 				failed[result.id] = true
 			}
 		case <-ctx.Done():
+			// Solo los anuncios que no alcanzaron a responder se consideran
+			// fallidos. Un peer que ya confirmó el COORDINATOR no debe aparecer
+			// como fallido porque otro anuncio pendiente agotó el timeout.
 			for _, peer := range peers {
-				failed[peer.ID] = true
+				if !completed[peer.ID] {
+					failed[peer.ID] = true
+				}
 			}
 			return orderedFailures(peers, failed)
 		}

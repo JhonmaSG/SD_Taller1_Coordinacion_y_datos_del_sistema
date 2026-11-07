@@ -15,4 +15,7 @@ type ElectionTransportPort interface {
 
 	// AnnounceCoordinator propaga un mensaje COORDINATOR a un nodo conocido.
 	AnnounceCoordinator(ctx context.Context, from, to, coordinator model.Node) error
+
+	// SendHeartbeat comprueba que el coordinador siga disponible.
+	SendHeartbeat(ctx context.Context, from, coordinator model.Node) (alive bool, err error)
 }

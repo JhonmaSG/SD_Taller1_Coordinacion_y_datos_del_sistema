@@ -257,6 +257,102 @@ func (x *AnnounceCoordinatorResponse) GetAccepted() bool {
 	return false
 }
 
+type ProcessHeartbeatRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sender        *Node                  `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
+	Coordinator   *Node                  `protobuf:"bytes,2,opt,name=coordinator,proto3" json:"coordinator,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProcessHeartbeatRequest) Reset() {
+	*x = ProcessHeartbeatRequest{}
+	mi := &file_election_v1_election_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProcessHeartbeatRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProcessHeartbeatRequest) ProtoMessage() {}
+
+func (x *ProcessHeartbeatRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_election_v1_election_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProcessHeartbeatRequest.ProtoReflect.Descriptor instead.
+func (*ProcessHeartbeatRequest) Descriptor() ([]byte, []int) {
+	return file_election_v1_election_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ProcessHeartbeatRequest) GetSender() *Node {
+	if x != nil {
+		return x.Sender
+	}
+	return nil
+}
+
+func (x *ProcessHeartbeatRequest) GetCoordinator() *Node {
+	if x != nil {
+		return x.Coordinator
+	}
+	return nil
+}
+
+type ProcessHeartbeatResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Alive         bool                   `protobuf:"varint,1,opt,name=alive,proto3" json:"alive,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProcessHeartbeatResponse) Reset() {
+	*x = ProcessHeartbeatResponse{}
+	mi := &file_election_v1_election_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProcessHeartbeatResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProcessHeartbeatResponse) ProtoMessage() {}
+
+func (x *ProcessHeartbeatResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_election_v1_election_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProcessHeartbeatResponse.ProtoReflect.Descriptor instead.
+func (*ProcessHeartbeatResponse) Descriptor() ([]byte, []int) {
+	return file_election_v1_election_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ProcessHeartbeatResponse) GetAlive() bool {
+	if x != nil {
+		return x.Alive
+	}
+	return false
+}
+
 var File_election_v1_election_proto protoreflect.FileDescriptor
 
 const file_election_v1_election_proto_rawDesc = "" +
@@ -273,10 +369,16 @@ const file_election_v1_election_proto_rawDesc = "" +
 	"\x06sender\x18\x01 \x01(\v2\x11.election.v1.NodeR\x06sender\x123\n" +
 	"\vcoordinator\x18\x02 \x01(\v2\x11.election.v1.NodeR\vcoordinator\"9\n" +
 	"\x1bAnnounceCoordinatorResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\bR\baccepted2\xd9\x01\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\"y\n" +
+	"\x17ProcessHeartbeatRequest\x12)\n" +
+	"\x06sender\x18\x01 \x01(\v2\x11.election.v1.NodeR\x06sender\x123\n" +
+	"\vcoordinator\x18\x02 \x01(\v2\x11.election.v1.NodeR\vcoordinator\"0\n" +
+	"\x18ProcessHeartbeatResponse\x12\x14\n" +
+	"\x05alive\x18\x01 \x01(\bR\x05alive2\xba\x02\n" +
 	"\x0fElectionService\x12\\\n" +
 	"\x0fRequestElection\x12#.election.v1.RequestElectionRequest\x1a$.election.v1.RequestElectionResponse\x12h\n" +
-	"\x13AnnounceCoordinator\x12'.election.v1.AnnounceCoordinatorRequest\x1a(.election.v1.AnnounceCoordinatorResponseBlZjgithub.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/election/v1;electionpbb\x06proto3"
+	"\x13AnnounceCoordinator\x12'.election.v1.AnnounceCoordinatorRequest\x1a(.election.v1.AnnounceCoordinatorResponse\x12_\n" +
+	"\x10ProcessHeartbeat\x12$.election.v1.ProcessHeartbeatRequest\x1a%.election.v1.ProcessHeartbeatResponseBlZjgithub.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/election/v1;electionpbb\x06proto3"
 
 var (
 	file_election_v1_election_proto_rawDescOnce sync.Once
@@ -290,27 +392,33 @@ func file_election_v1_election_proto_rawDescGZIP() []byte {
 	return file_election_v1_election_proto_rawDescData
 }
 
-var file_election_v1_election_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_election_v1_election_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_election_v1_election_proto_goTypes = []any{
 	(*Node)(nil),                        // 0: election.v1.Node
 	(*RequestElectionRequest)(nil),      // 1: election.v1.RequestElectionRequest
 	(*RequestElectionResponse)(nil),     // 2: election.v1.RequestElectionResponse
 	(*AnnounceCoordinatorRequest)(nil),  // 3: election.v1.AnnounceCoordinatorRequest
 	(*AnnounceCoordinatorResponse)(nil), // 4: election.v1.AnnounceCoordinatorResponse
+	(*ProcessHeartbeatRequest)(nil),     // 5: election.v1.ProcessHeartbeatRequest
+	(*ProcessHeartbeatResponse)(nil),    // 6: election.v1.ProcessHeartbeatResponse
 }
 var file_election_v1_election_proto_depIdxs = []int32{
 	0, // 0: election.v1.RequestElectionRequest.sender:type_name -> election.v1.Node
 	0, // 1: election.v1.AnnounceCoordinatorRequest.sender:type_name -> election.v1.Node
 	0, // 2: election.v1.AnnounceCoordinatorRequest.coordinator:type_name -> election.v1.Node
-	1, // 3: election.v1.ElectionService.RequestElection:input_type -> election.v1.RequestElectionRequest
-	3, // 4: election.v1.ElectionService.AnnounceCoordinator:input_type -> election.v1.AnnounceCoordinatorRequest
-	2, // 5: election.v1.ElectionService.RequestElection:output_type -> election.v1.RequestElectionResponse
-	4, // 6: election.v1.ElectionService.AnnounceCoordinator:output_type -> election.v1.AnnounceCoordinatorResponse
-	5, // [5:7] is the sub-list for method output_type
-	3, // [3:5] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 3: election.v1.ProcessHeartbeatRequest.sender:type_name -> election.v1.Node
+	0, // 4: election.v1.ProcessHeartbeatRequest.coordinator:type_name -> election.v1.Node
+	1, // 5: election.v1.ElectionService.RequestElection:input_type -> election.v1.RequestElectionRequest
+	3, // 6: election.v1.ElectionService.AnnounceCoordinator:input_type -> election.v1.AnnounceCoordinatorRequest
+	5, // 7: election.v1.ElectionService.ProcessHeartbeat:input_type -> election.v1.ProcessHeartbeatRequest
+	2, // 8: election.v1.ElectionService.RequestElection:output_type -> election.v1.RequestElectionResponse
+	4, // 9: election.v1.ElectionService.AnnounceCoordinator:output_type -> election.v1.AnnounceCoordinatorResponse
+	6, // 10: election.v1.ElectionService.ProcessHeartbeat:output_type -> election.v1.ProcessHeartbeatResponse
+	8, // [8:11] is the sub-list for method output_type
+	5, // [5:8] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_election_v1_election_proto_init() }
@@ -324,7 +432,7 @@ func file_election_v1_election_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_election_v1_election_proto_rawDesc), len(file_election_v1_election_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

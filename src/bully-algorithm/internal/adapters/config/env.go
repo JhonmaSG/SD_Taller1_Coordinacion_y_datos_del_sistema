@@ -15,21 +15,23 @@ import (
 )
 
 const (
-	defaultNodePort      = "5000"
-	defaultTimeoutMillis = 3000
-	defaultDatabaseName  = "inventory"
-	defaultResourceTable = "resources"
+	defaultNodePort        = "5000"
+	defaultTimeoutMillis   = 3000
+	defaultHeartbeatMillis = 1000
+	defaultDatabaseName    = "inventory"
+	defaultResourceTable   = "resources"
 )
 
 // Config contiene la configuración necesaria para ensamblar un nodo.
 type Config struct {
-	LocalNode       model.Node
-	Peers           []model.Node
-	ListenAddress   string
-	ElectionTimeout time.Duration
-	DatabaseURI     string
-	DatabaseName    string
-	ResourceTable   string
+	LocalNode         model.Node
+	Peers             []model.Node
+	ListenAddress     string
+	ElectionTimeout   time.Duration
+	HeartbeatInterval time.Duration
+	DatabaseURI       string
+	DatabaseName      string
+	ResourceTable     string
 }
 
 // StaticMembership implementa la membresía desde configuración estática.
@@ -118,6 +120,14 @@ func LoadFromEnv() (Config, error) {
 		}
 	}
 
+	heartbeatMillis := defaultHeartbeatMillis
+	if raw := strings.TrimSpace(os.Getenv("HEARTBEAT_MS")); raw != "" {
+		heartbeatMillis, err = strconv.Atoi(raw)
+		if err != nil || heartbeatMillis <= 0 {
+			return Config{}, errors.New("HEARTBEAT_MS must be a positive integer")
+		}
+	}
+
 	databaseURI := strings.TrimSpace(os.Getenv("DB_URI"))
 	if databaseURI == "" {
 		return Config{}, errors.New("DB_URI must not be empty")
@@ -136,13 +146,14 @@ func LoadFromEnv() (Config, error) {
 	}
 
 	return Config{
-		LocalNode:       membership.LocalNode(),
-		Peers:           membership.Peers(),
-		ListenAddress:   localAddress,
-		ElectionTimeout: time.Duration(timeoutMillis) * time.Millisecond,
-		DatabaseURI:     databaseURI,
-		DatabaseName:    databaseName,
-		ResourceTable:   resourceTable,
+		LocalNode:         membership.LocalNode(),
+		Peers:             membership.Peers(),
+		ListenAddress:     localAddress,
+		ElectionTimeout:   time.Duration(timeoutMillis) * time.Millisecond,
+		HeartbeatInterval: time.Duration(heartbeatMillis) * time.Millisecond,
+		DatabaseURI:       databaseURI,
+		DatabaseName:      databaseName,
+		ResourceTable:     resourceTable,
 	}, nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 
 	"google.golang.org/grpc"
@@ -18,16 +19,27 @@ import (
 // transporte a modelos de dominio y delega toda la decisión al caso de uso.
 type ElectionServer struct {
 	electionpb.UnimplementedElectionServiceServer
-	useCase *usecase.BullyElectionUseCase
+	electionUseCase  *usecase.BullyElectionUseCase
+	heartbeatUseCase *usecase.ProcessHeartbeatUseCase
 }
 
-// NewElectionServer crea un servidor gRPC conectado al caso de uso de elección.
-func NewElectionServer(useCase *usecase.BullyElectionUseCase) (*ElectionServer, error) {
-	if useCase == nil {
+// NewElectionServer crea un servidor gRPC conectado a los casos de uso de
+// elección y heartbeat.
+func NewElectionServer(
+	electionUseCase *usecase.BullyElectionUseCase,
+	heartbeatUseCase *usecase.ProcessHeartbeatUseCase,
+) (*ElectionServer, error) {
+	if electionUseCase == nil {
 		return nil, errors.New("bully election use case must not be nil")
 	}
+	if heartbeatUseCase == nil {
+		return nil, errors.New("heartbeat use case must not be nil")
+	}
 
-	return &ElectionServer{useCase: useCase}, nil
+	return &ElectionServer{
+		electionUseCase:  electionUseCase,
+		heartbeatUseCase: heartbeatUseCase,
+	}, nil
 }
 
 // Register registra el servicio en una instancia gRPC gestionada por el
@@ -69,7 +81,7 @@ func (s *ElectionServer) RequestElection(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid election sender: %v", err)
 	}
 
-	acknowledged, err := s.useCase.HandleElection(ctx, candidate)
+	acknowledged, err := s.electionUseCase.HandleElection(ctx, candidate)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
 	}
@@ -94,9 +106,23 @@ func (s *ElectionServer) AnnounceCoordinator(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid coordinator: %v", err)
 	}
 
-	if _, err := s.useCase.HandleCoordinator(coordinator); err != nil {
+	result, err := s.electionUseCase.HandleCoordinator(coordinator)
+	if err != nil {
+		log.Printf(
+			"COORDINATOR rejected sender=%d coordinator=%d error=%v",
+			announcement.GetSender().GetId(),
+			coordinator.ID,
+			err,
+		)
 		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
 	}
+
+	log.Printf(
+		"COORDINATOR received sender=%d coordinator=%d state=%s",
+		announcement.GetSender().GetId(),
+		coordinator.ID,
+		result.State,
+	)
 
 	return &electionpb.AnnounceCoordinatorResponse{Accepted: true}, nil
 }
@@ -114,4 +140,31 @@ func (s *ElectionServer) ListenAndServe(address string) error {
 	}
 
 	return s.Serve(listener)
+}
+
+// ProcessHeartbeat confirma si el nodo local sigue siendo el coordinador que
+// el emisor está supervisando.
+func (s *ElectionServer) ProcessHeartbeat(
+	_ context.Context,
+	request *electionpb.ProcessHeartbeatRequest,
+) (*electionpb.ProcessHeartbeatResponse, error) {
+	if request == nil {
+		return nil, status.Error(codes.InvalidArgument, "heartbeat request must not be nil")
+	}
+
+	sender, err := fromProtoNode(request.GetSender())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid heartbeat sender: %v", err)
+	}
+	coordinator, err := fromProtoNode(request.GetCoordinator())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid heartbeat coordinator: %v", err)
+	}
+
+	alive, err := s.heartbeatUseCase.HandleHeartbeat(sender, coordinator)
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
+	}
+
+	return &electionpb.ProcessHeartbeatResponse{Alive: alive}, nil
 }

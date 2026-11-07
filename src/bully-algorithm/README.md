@@ -7,8 +7,8 @@ Replica Set de MongoDB y el adaptador de persistencia para recursos.
 
 > El proceso inicializa MongoDB y verifica su disponibilidad, pero todavía no
 > ejecuta un caso de uso de inventario que lea o escriba recursos. La elección,
-> la asignación de recursos, la replicación y los heartbeats son capacidades
-> separadas.
+> la detección de caída del coordinador, la asignación de recursos y la
+> replicación son capacidades separadas.
 
 ## 1. Cómo se ejecuta el proceso
 
@@ -46,6 +46,7 @@ NODE_HOST=100.x.x.1
 NODE_PORT=5000
 PEERS=2@100.x.x.2:5000,3@100.x.x.3:5000
 TIMEOUT_MS=3000
+HEARTBEAT_MS=1000
 DB_URI=mongodb://100.x.x.1:27017,100.x.x.2:27017,100.x.x.3:27017/?replicaSet=rs-grupo
 DB_NAME=inventory
 DB_COLLECTION=resources
@@ -76,11 +77,11 @@ El ID debe formar parte de la configuración porque el algoritmo no puede
 inferir la prioridad de un nodo a partir de su dirección IP. Los IDs deben ser
 positivos, únicos y no pueden repetir el ID local.
 
-### Timeout
+### Heartbeat
 
-`TIMEOUT_MS` controla el contexto de la elección inicial. También se propaga a
-las llamadas gRPC que realiza esa ronda. Un peer que no responde dentro del
-contexto se considera no disponible para esa elección.
+`HEARTBEAT_MS` define cada cuánto un nodo seguidor consulta al coordinador
+actual. Si el heartbeat falla, el nodo inicia una nueva elección con Bully.
+El valor predeterminado es `1000` milisegundos.
 
 ## 3. Flujo de arranque de `main.go`
 
@@ -108,35 +109,37 @@ grpcadapter.NewElectionTransport()
 usecase.NewBullyElectionUseCase()
     │
     ▼
-mongodb.NewResourceRepository()
-    │
-    ├── mongo.Connect()
-    ├── Ping() del Replica Set
-    └── repositorio listo para futuros casos de uso
-    │
-    ▼
-grpcadapter.NewElectionServer()
-    │
-    ▼
 net.Listen() + grpc.Server.Serve()
     │
     ▼
 election.Start()
+    │
+    ▼
+MongoDB (modo operativo o degradado)
+    │
+    ├── mongo.Connect()
+    ├── Ping() del Replica Set
+    └── repositorio listo si la BD responde
 ```
 
 El servidor gRPC se inicia antes de la elección para que el nodo pueda recibir
-solicitudes `ELECTION` mientras participa en su propia ronda.
-
-Durante el apagado:
+solicitudes `ELECTION` mientras participa en su propia ronda. La elección no
+espera a que MongoDB esté disponible: la coordinación es el plano de control y
+la base de datos es el plano de datos. Si MongoDB no responde, el nodo continúa
+en modo degradado y las operaciones de inventario quedan deshabilitadas hasta
+que exista una estrategia de reconexión.
 
 1. `GracefulStop()` detiene el servidor gRPC.
 2. Se cierra el listener TCP.
 3. Se desconecta el cliente MongoDB mediante `Close()`.
 4. Se liberan los recursos del proceso.
 
-Si falla la configuración, la escucha TCP o el `Ping` de MongoDB, el proceso
-termina con un error explícito. Esto evita que un nodo se anuncie como activo
-cuando no tiene conectividad con la infraestructura requerida.
+Si falla la configuración o la escucha TCP, el proceso termina con un error
+explícito. Si falla el `Ping` de MongoDB, el proceso registra una advertencia y
+continúa con el plano de coordinación activo. Esto permite que el nodo
+participe en Bully aunque el Replica Set esté incompleto o temporalmente sin
+primary. Las asignaciones de inventario deben permanecer deshabilitadas hasta
+que MongoDB vuelva a estar disponible.
 
 ## 4. Arquitectura de carpetas
 
@@ -388,8 +391,15 @@ Los errores de configuración detienen el arranque:
 - Puerto local ocupado.
 
 Los errores de comunicación durante una elección no detienen toda la ronda.
-Una conexión fallida se interpreta como ausencia de respuesta del peer. Si el
-nodo local se proclama coordinador y no logra enviar un anuncio, el ID del peer
+Una conexión fallida se interpreta como ausencia de respuesta del peer. El
+vencimiento normal de `TIMEOUT_MS` también se interpreta como ausencia de
+respuesta, no como un error fatal de la elección. Por ejemplo, si el nodo 1
+inicia con los nodos 2 y 3 apagados, espera el timeout, se proclama coordinador
+y continúa ejecutando. Si uno de los nodos superiores responde `acknowledged=true`,
+el nodo local espera el anuncio del coordinador porque existe evidencia de un
+nodo de mayor prioridad activo.
+
+Si el nodo local se proclama coordinador y no logra enviar un anuncio, el ID del peer
 se guarda en `AnnouncementFailures`.
 
 Las solicitudes gRPC mal formadas se rechazan con códigos adecuados:
@@ -540,7 +550,6 @@ go vet ./internal/...
 
 Esta implementación deja preparados los componentes, pero todavía faltan:
 
-- Heartbeats periódicos.
 - Reintento automático si llega `OK` pero no llega `COORDINATOR`.
 - Caso de uso de asignación de recursos.
 - Sincronización entre réplicas.
@@ -552,3 +561,92 @@ Esta implementación deja preparados los componentes, pero todavía faltan:
 La elección Bully ya está separada de esos componentes. Esto permite agregar
 los casos de uso posteriores sin cambiar el contrato protobuf ni introducir
 MongoDB dentro del dominio.
+
+## 11. Ejecutar tres nodos en local
+
+Para probar Bully sin levantar tres máquinas, el repositorio incluye:
+
+```text
+scripts/levantar_nodos_local.sh
+```
+
+El script compila una única vez el binario y levanta tres procesos con esta
+configuración:
+
+```text
+Nodo 1 → 127.0.0.1:5001
+Nodo 2 → 127.0.0.1:5002
+Nodo 3 → 127.0.0.1:5003
+```
+
+Cada proceso recibe una membresía completa y el nodo 3 tiene la prioridad más
+alta. El script reutiliza `DB_URI`, `DB_NAME`, `DB_COLLECTION`, `TIMEOUT_MS` y
+`HEARTBEAT_MS` desde `src/bully-algorithm/.env`.
+
+Desde Git Bash o WSL, ejecutar en la raíz del repositorio:
+
+```bash
+bash scripts/levantar_nodos_local.sh
+```
+
+Los logs se escriben en:
+
+```text
+.runtime/local-nodes/logs/node1.log
+.runtime/local-nodes/logs/node2.log
+.runtime/local-nodes/logs/node3.log
+```
+
+Presionar `Ctrl+C` en la terminal del script detiene los tres procesos. El
+binario y los logs quedan dentro de `.runtime/`, que está excluido mediante
+`.gitignore`.
+
+En Windows PowerShell sin Git Bash ni WSL, el archivo `.sh` no se puede ejecutar
+directamente. En ese caso se puede instalar Git Bash o usar las tres terminales
+PowerShell con `go run ./cmd` y las variables `NODE_ID`, `NODE_PORT` y `PEERS`
+configuradas por proceso.
+
+## 12. Detección de caída del coordinador
+
+El caso de uso `ProcessHeartbeatUseCase` está en:
+
+```text
+internal/domain/usecase/process_heartbeat_usecase.go
+```
+
+Cada nodo supervisa periódicamente al coordinador que conoce. El intervalo se
+configura con `HEARTBEAT_MS` y usa `TIMEOUT_MS` como límite de cada heartbeat y
+de la elección posterior.
+
+El flujo es:
+
+```text
+Nodo seguidor
+    │
+    ├── ProcessHeartbeat ──> Coordinador
+    │
+    ├── alive=true
+    │       └── continúa supervisando
+    │
+    └── timeout/error
+            │
+            └── inicia una nueva elección Bully
+```
+
+El RPC se define en `proto/election/v1/election.proto`:
+
+```protobuf
+rpc ProcessHeartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+```
+
+Si el coordinador 2 se apaga mientras el nodo 1 está activo:
+
+1. El nodo 1 deja de recibir respuestas.
+2. El heartbeat agota su timeout.
+3. El nodo 1 inicia `BullyElectionUseCase.Start`.
+4. Los nodos 2 y 3 que no respondan se consideran caídos.
+5. El nodo 1 se proclama coordinador si es el nodo activo con mayor ID.
+6. El nodo 1 anuncia `COORDINATOR` a los peers disponibles.
+
+El monitor se inicia desde `cmd/main.go` después de la elección inicial y se
+detiene mediante el mismo contexto de apagado ordenado del servidor gRPC.
