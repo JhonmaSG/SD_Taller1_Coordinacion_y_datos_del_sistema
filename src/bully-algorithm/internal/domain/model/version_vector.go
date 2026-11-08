@@ -1,0 +1,101 @@
+package model
+
+// VersionVector relaciona la clave estable de cada nodo con el contador de
+// versiones que ha generado para un documento específico.
+type VersionVector map[string]uint64
+
+// VersionRelation describe la relación parcial entre dos vectores.
+type VersionRelation uint8
+
+const (
+	VersionEqual VersionRelation = iota
+	VersionBefore
+	VersionAfter
+	VersionConcurrent
+)
+
+// NewVersionVector crea un vector explícito con todos los nodos conocidos en
+// cero. La ausencia de una clave también equivale a cero al comparar, pero
+// persistirlas hace visible la membresía del sistema.
+func NewVersionVector(nodeIDs []NodeID) VersionVector {
+	vector := make(VersionVector, len(nodeIDs))
+	for _, nodeID := range nodeIDs {
+		if nodeID != 0 {
+			vector[nodeID.Key()] = 0
+		}
+	}
+
+	return vector
+}
+
+// Clone devuelve una copia independiente del vector.
+func (v VersionVector) Clone() VersionVector {
+	clone := make(VersionVector, len(v))
+	for nodeID, counter := range v {
+		clone[nodeID] = counter
+	}
+
+	return clone
+}
+
+// Increment incrementa el contador del nodo que produjo una nueva versión.
+func (v VersionVector) Increment(nodeID NodeID) {
+	if v == nil {
+		return
+	}
+
+	v[nodeID.Key()]++
+}
+
+// Merge combina dos vectores tomando el contador máximo de cada nodo.
+func (v VersionVector) Merge(other VersionVector) VersionVector {
+	merged := v.Clone()
+	if merged == nil {
+		merged = make(VersionVector)
+	}
+
+	for nodeID, counter := range other {
+		if counter > merged[nodeID] {
+			merged[nodeID] = counter
+		}
+	}
+
+	return merged
+}
+
+// Compare determina si un vector precede, sucede o es concurrente con otro.
+// Un nodo ausente equivale a un contador cero.
+func (v VersionVector) Compare(other VersionVector) VersionRelation {
+	less, greater := false, false
+
+	for nodeID, counter := range v {
+		otherCounter := other[nodeID]
+		if counter < otherCounter {
+			less = true
+		}
+		if counter > otherCounter {
+			greater = true
+		}
+	}
+
+	for nodeID, counter := range other {
+		thisCounter := v[nodeID]
+		if thisCounter < counter {
+			less = true
+		}
+		if thisCounter > counter {
+			greater = true
+		}
+	}
+
+	switch {
+	case less && greater:
+		return VersionConcurrent
+	case less:
+		return VersionBefore
+	case greater:
+		return VersionAfter
+	default:
+		return VersionEqual
+	}
+}

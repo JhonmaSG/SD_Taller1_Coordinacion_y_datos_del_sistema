@@ -21,3 +21,9 @@ data/
 *.tmp
 .vscode/
 .idea/
+
+# Ejecución local de los nodos distribuidos
+.runtime/
+
+# Binarios compilados
+src/bully-algorithm/dist/
