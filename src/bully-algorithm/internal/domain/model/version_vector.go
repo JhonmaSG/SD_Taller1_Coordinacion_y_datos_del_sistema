@@ -80,10 +80,10 @@ func (v VersionVector) Compare(other VersionVector) VersionRelation {
 
 	for nodeID, counter := range other {
 		thisCounter := v[nodeID]
-		if counter < thisCounter {
+		if thisCounter < counter {
 			less = true
 		}
-		if counter > thisCounter {
+		if thisCounter > counter {
 			greater = true
 		}
 	}

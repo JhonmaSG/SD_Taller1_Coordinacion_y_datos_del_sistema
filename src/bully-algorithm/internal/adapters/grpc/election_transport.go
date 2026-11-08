@@ -144,13 +144,7 @@ func fromProtoNode(node *electionpb.Node) (model.Node, error) {
 
 	return converted, nil
 }
-func (t *ElectionTransport) RegisterNode(
-	ctx context.Context,
-	sender model.Node,
-	coordinator model.Node,
-	resources model.NodeResources,
-	metadata model.Metadata,
-) (model.NodeDocument, error) {
+func (t *ElectionTransport) RegisterNode(ctx context.Context, sender model.Node, coordinator model.Node, resources model.NodeResources) (model.NodeDocument, error) {
 	if ctx == nil {
 		return model.NodeDocument{}, errors.New("context must not be nil")
 	}
@@ -168,7 +162,7 @@ func (t *ElectionTransport) RegisterNode(
 	defer conn.Close()
 
 	response, err := electionpb.NewElectionServiceClient(conn).RegisterNode(ctx, &electionpb.RegisterNodeRequest{
-		Sender: toProtoNode(sender), Resources: toProtoResources(resources), Metadata: toProtoMetadata(metadata),
+		Sender: toProtoNode(sender), Resources: toProtoResources(resources),
 	}, grpc.WaitForReady(true))
 	if err != nil {
 		return model.NodeDocument{}, err
@@ -184,23 +178,15 @@ func toProtoResources(resources model.NodeResources) *electionpb.NodeResources {
 	return &electionpb.NodeResources{CpuCores: resources.CPUCores, MemoryGb: resources.MemoryGB, BandwidthMbps: resources.BandwidthMbps}
 }
 
-func toProtoMetadata(metadata model.Metadata) *electionpb.NodeMetadata {
-	return &electionpb.NodeMetadata{LamportClock: uint64(metadata.Lamport), VersionVector: metadata.VersionVector, LastModifiedBy: metadata.UpdatedBy.Key()}
-}
-
 func fromProtoDocument(document *electionpb.NodeDocument) (model.NodeDocument, error) {
-	if document == nil || document.GetNode() == nil || document.GetMetadata() == nil {
+	if document == nil || document.GetNode() == nil {
 		return model.NodeDocument{}, errors.New("registration response document is incomplete")
 	}
 	node, err := fromProtoNode(document.GetNode())
 	if err != nil {
 		return model.NodeDocument{}, err
 	}
-	updatedBy, err := parseNodeKey(document.GetMetadata().GetLastModifiedBy())
-	if err != nil {
-		return model.NodeDocument{}, err
-	}
-	result := model.NodeDocument{ID: node.ID, Role: model.NodeRole(document.GetNodeRole()), Status: model.NodeStatus(document.GetStatus()), Resources: model.NodeResources{CPUCores: document.GetResources().GetCpuCores(), MemoryGB: document.GetResources().GetMemoryGb(), BandwidthMbps: document.GetResources().GetBandwidthMbps()}, Metadata: model.Metadata{Lamport: model.LamportTime(document.GetMetadata().GetLamportClock()), VersionVector: document.GetMetadata().GetVersionVector(), UpdatedBy: updatedBy}}
+	result := model.NodeDocument{ID: node.ID, Role: model.NodeRole(document.GetNodeRole()), Status: model.NodeStatus(document.GetStatus()), Resources: model.NodeResources{CPUCores: document.GetResources().GetCpuCores(), MemoryGB: document.GetResources().GetMemoryGb(), BandwidthMbps: document.GetResources().GetBandwidthMbps()}}
 	if err := result.Validate(); err != nil {
 		return model.NodeDocument{}, err
 	}

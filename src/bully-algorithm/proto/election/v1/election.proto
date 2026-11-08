@@ -49,16 +49,9 @@ message NodeResources {
   int64 bandwidth_mbps = 3;
 }
 
-message NodeMetadata {
-  uint64 lamport_clock = 1;
-  map<string, uint64> version_vector = 2;
-  string last_modified_by = 3;
-}
-
 message RegisterNodeRequest {
   Node sender = 1;
   NodeResources resources = 2;
-  NodeMetadata metadata = 3;
 }
 
 message RegisterNodeResponse {
@@ -71,5 +64,4 @@ message NodeDocument {
   string node_role = 2;
   NodeResources resources = 3;
   string status = 4;
-  NodeMetadata metadata = 5;
 }

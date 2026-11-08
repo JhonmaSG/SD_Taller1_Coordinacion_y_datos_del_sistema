@@ -209,16 +209,12 @@ func (s *ElectionServer) RegisterNode(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid registration sender: %v", err)
 	}
 	resources := model.NodeResources{CPUCores: request.GetResources().GetCpuCores(), MemoryGB: request.GetResources().GetMemoryGb(), BandwidthMbps: request.GetResources().GetBandwidthMbps()}
-	metadata, err := fromProtoMetadata(request.GetMetadata())
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid registration metadata: %v", err)
-	}
 
 	if s.registrationUseCase == nil {
 		return nil, status.Error(codes.Unavailable, "node registration persistence is unavailable")
 	}
 
-	document, err := s.registrationUseCase.RegisterRemote(context.Background(), sender, resources, metadata)
+	document, err := s.registrationUseCase.RegisterRemote(context.Background(), sender, resources)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
 	}
@@ -226,23 +222,9 @@ func (s *ElectionServer) RegisterNode(
 	return &electionpb.RegisterNodeResponse{Accepted: true, Document: toProtoDocument(document)}, nil
 }
 
-func fromProtoMetadata(metadata *electionpb.NodeMetadata) (model.Metadata, error) {
-	if metadata == nil {
-		return model.Metadata{}, errors.New("metadata message must not be nil")
-	}
-	updatedBy, err := parseNodeKey(metadata.GetLastModifiedBy())
-	if err != nil {
-		return model.Metadata{}, err
-	}
-	return model.Metadata{Lamport: model.LamportTime(metadata.GetLamportClock()), VersionVector: metadata.GetVersionVector(), UpdatedBy: updatedBy}, nil
-}
-
 func toProtoDocument(document model.NodeDocument) *electionpb.NodeDocument {
 	return &electionpb.NodeDocument{
-		Node:      &electionpb.Node{Id: uint64(document.ID)},
-		NodeRole:  string(document.Role),
-		Resources: &electionpb.NodeResources{CpuCores: document.Resources.CPUCores, MemoryGb: document.Resources.MemoryGB, BandwidthMbps: document.Resources.BandwidthMbps},
-		Status:    string(document.Status),
-		Metadata:  &electionpb.NodeMetadata{LamportClock: uint64(document.Metadata.Lamport), VersionVector: document.Metadata.VersionVector, LastModifiedBy: document.Metadata.UpdatedBy.Key()},
+		Node: &electionpb.Node{Id: uint64(document.ID)}, NodeRole: string(document.Role),
+		Resources: &electionpb.NodeResources{CpuCores: document.Resources.CPUCores, MemoryGb: document.Resources.MemoryGB, BandwidthMbps: document.Resources.BandwidthMbps}, Status: string(document.Status),
 	}
 }

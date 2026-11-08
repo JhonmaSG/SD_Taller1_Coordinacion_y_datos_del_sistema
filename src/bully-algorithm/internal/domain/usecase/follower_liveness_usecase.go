@@ -19,7 +19,7 @@ import (
 type FollowerLivenessUseCase struct {
 	membership   ports.MembershipPort
 	coordinator  ports.CoordinatorView
-	registration *RegisterNodeUseCase
+	registration ports.FollowerStatusWriter
 	staleAfter   time.Duration
 	now          func() time.Time
 
@@ -33,7 +33,7 @@ type FollowerLivenessUseCase struct {
 func NewFollowerLivenessUseCase(
 	membership ports.MembershipPort,
 	coordinator ports.CoordinatorView,
-	registration *RegisterNodeUseCase,
+	registration ports.FollowerStatusWriter,
 	staleAfter time.Duration,
 ) (*FollowerLivenessUseCase, error) {
 	if membership == nil || coordinator == nil || registration == nil {

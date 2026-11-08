@@ -12,126 +12,71 @@ import (
 
 var ErrNotCoordinator = ports.ErrNotCoordinator
 
-// UpdateNodeResourcesCommand contiene el estado de recursos que se desea
-// aplicar al documento del nodo local.
-type UpdateNodeResourcesCommand struct {
-	Resources model.NodeResources
-}
+type UpdateNodeResourcesCommand struct{ Resources model.NodeResources }
 
-// UpdateNodeResourcesUseCase actualiza el agregado del nodo coordinador con
-// control de versión optimista y un reloj Lamport local.
 type UpdateNodeResourcesUseCase struct {
 	membership  ports.MembershipPort
 	coordinator ports.CoordinatorView
 	repository  ports.NodeDocumentRepository
-
-	mu    sync.Mutex
-	clock model.LamportClock
+	mu          sync.Mutex
 }
 
-// NewUpdateNodeResourcesUseCase crea el caso de uso de escritura exclusiva del
-// coordinador.
-func NewUpdateNodeResourcesUseCase(
-	membership ports.MembershipPort,
-	coordinator ports.CoordinatorView,
-	repository ports.NodeDocumentRepository,
-) (*UpdateNodeResourcesUseCase, error) {
-	if membership == nil {
-		return nil, errors.New("membership port must not be nil")
+func NewUpdateNodeResourcesUseCase(membership ports.MembershipPort, coordinator ports.CoordinatorView, repository ports.NodeDocumentRepository) (*UpdateNodeResourcesUseCase, error) {
+	if membership == nil || coordinator == nil || repository == nil {
+		return nil, errors.New("update resources dependencies must not be nil")
 	}
-	if coordinator == nil {
-		return nil, errors.New("coordinator view must not be nil")
-	}
-	if repository == nil {
-		return nil, errors.New("node document repository must not be nil")
-	}
-
-	return &UpdateNodeResourcesUseCase{
-		membership:  membership,
-		coordinator: coordinator,
-		repository:  repository,
-		clock:       model.NewLamportClock(0),
-	}, nil
+	return &UpdateNodeResourcesUseCase{membership: membership, coordinator: coordinator, repository: repository}, nil
 }
 
-// Update lee, versiona y persiste atómicamente el documento local. Los
-// conflictos CAS se reintentan de forma limitada; nunca se sobrescribe una
-// versión concurrente sin volver a leerla.
-func (uc *UpdateNodeResourcesUseCase) Update(
-	ctx context.Context,
-	command UpdateNodeResourcesCommand,
-) (model.NodeDocument, error) {
+func (uc *UpdateNodeResourcesUseCase) Update(ctx context.Context, command UpdateNodeResourcesCommand) (model.NodeDocument, error) {
 	if ctx == nil {
 		return model.NodeDocument{}, errors.New("context must not be nil")
 	}
-	if err := validateResources(command.Resources); err != nil {
+	if err := command.Resources.Validate(); err != nil {
 		return model.NodeDocument{}, err
 	}
 	if !uc.coordinator.IsLocalCoordinator() {
 		return model.NodeDocument{}, ErrNotCoordinator
 	}
 
-	local := uc.membership.LocalNode()
-	if err := local.Validate(); err != nil {
-		return model.NodeDocument{}, fmt.Errorf("invalid local node: %w", err)
-	}
-
-	// Serializa las escrituras locales para que Tick e Increment sean eventos
-	// monotónicos incluso si llegan varias peticiones concurrentes.
 	uc.mu.Lock()
 	defer uc.mu.Unlock()
-
+	local := uc.membership.LocalNode()
 	for attempt := 0; attempt < 3; attempt++ {
-		if err := ctx.Err(); err != nil {
+		current, err := uc.repository.Get(ctx, local.ID)
+		if errors.Is(err, ports.ErrNodeDocumentNotFound) {
+			current = model.NewNodeDocument(local.ID)
+		} else if err != nil {
 			return model.NodeDocument{}, err
 		}
-		if !uc.coordinator.IsLocalCoordinator() {
-			return model.NodeDocument{}, ErrNotCoordinator
+		cluster, err := uc.repository.GetClusterMetadata(ctx)
+		if errors.Is(err, ports.ErrClusterMetadataNotFound) {
+			cluster = model.ClusterMetadata{VersionVector: model.NewVersionVector(uc.knownNodeIDs())}
+		} else if err != nil {
+			return model.NodeDocument{}, err
 		}
-
-		current, err := uc.repository.Get(ctx, local.ID)
-		expected := model.Metadata{}
-		if err != nil {
-			if !errors.Is(err, ports.ErrNodeDocumentNotFound) {
-				return model.NodeDocument{}, fmt.Errorf("get node document: %w", err)
-			}
-			current = model.NewNodeDocument(local.ID)
-			if cluster, clusterErr := uc.repository.GetClusterMetadata(ctx); clusterErr == nil {
-				current.Metadata = cluster.AsMetadata()
-			} else if !errors.Is(clusterErr, ports.ErrClusterMetadataNotFound) {
-				return model.NodeDocument{}, fmt.Errorf("get cluster metadata: %w", clusterErr)
-			}
-		} else {
-			expected = current.Metadata.Clone()
-		}
-
-		next := current.Clone()
+		next := current
 		next.ID = local.ID
 		next.Role = model.RoleCoordinator
 		next.Status = model.StatusOnline
 		next.Resources = command.Resources
-		next.Metadata = current.Metadata.Clone()
-
-		if err := next.Validate(); err != nil {
-			return model.NodeDocument{}, err
-		}
-		if err := uc.repository.UpdateAtomic(ctx, local.ID, expected, next); err != nil {
+		nextCluster := cluster.Advance(local.ID, uc.knownNodeIDs())
+		if err := uc.repository.UpdateAtomic(ctx, local.ID, cluster, nextCluster, next); err != nil {
 			if errors.Is(err, ports.ErrVersionConflict) {
 				continue
 			}
 			return model.NodeDocument{}, fmt.Errorf("update node document: %w", err)
 		}
-
 		return next, nil
 	}
-
 	return model.NodeDocument{}, ports.ErrVersionConflict
 }
 
-func validateResources(resources model.NodeResources) error {
-	if resources.CPUCores < 0 || resources.MemoryGB < 0 || resources.BandwidthMbps < 0 {
-		return errors.New("resource values cannot be negative")
+func (uc *UpdateNodeResourcesUseCase) knownNodeIDs() []model.NodeID {
+	local := uc.membership.LocalNode()
+	ids := []model.NodeID{local.ID}
+	for _, peer := range uc.membership.Peers() {
+		ids = append(ids, peer.ID)
 	}
-
-	return nil
+	return ids
 }

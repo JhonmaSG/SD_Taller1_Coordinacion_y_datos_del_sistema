@@ -19,11 +19,19 @@ import (
 
 // MachineCapacityReader obtiene CPU, memoria física y velocidad de enlace del
 // host. No lee estos valores desde variables de entorno.
-type MachineCapacityReader struct{}
+type MachineCapacityReader struct {
+	cpu       func() int
+	memory    func(context.Context) (int64, error)
+	bandwidth func(context.Context) int64
+}
 
 // NewMachineCapacityReader crea el lector de capacidad del sistema.
 func NewMachineCapacityReader() *MachineCapacityReader {
-	return &MachineCapacityReader{}
+	return &MachineCapacityReader{
+		cpu:       runtime.NumCPU,
+		memory:    physicalMemoryGB,
+		bandwidth: func(ctx context.Context) int64 { return linkBandwidthMbps(ctx) },
+	}
 }
 
 // Read obtiene la capacidad física detectada en el sistema operativo.
@@ -32,16 +40,15 @@ func (r *MachineCapacityReader) Read(ctx context.Context) (model.NodeResources, 
 		return model.NodeResources{}, errors.New("context must not be nil")
 	}
 
-	memoryGB, err := physicalMemoryGB(ctx)
+	memoryGB, err := r.memory(ctx)
 	if err != nil {
 		return model.NodeResources{}, err
 	}
 
-	bandwidthMbps := linkBandwidthMbps(ctx)
 	return model.NodeResources{
-		CPUCores:      int64(runtime.NumCPU()),
+		CPUCores:      int64(r.cpu()),
 		MemoryGB:      memoryGB,
-		BandwidthMbps: int64(bandwidthMbps),
+		BandwidthMbps: r.bandwidth(ctx),
 	}, nil
 }
 

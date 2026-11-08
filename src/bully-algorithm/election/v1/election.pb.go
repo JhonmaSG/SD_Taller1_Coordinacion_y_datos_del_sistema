@@ -413,78 +413,17 @@ func (x *NodeResources) GetBandwidthMbps() int64 {
 	return 0
 }
 
-type NodeMetadata struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	LamportClock   uint64                 `protobuf:"varint,1,opt,name=lamport_clock,json=lamportClock,proto3" json:"lamport_clock,omitempty"`
-	VersionVector  map[string]uint64      `protobuf:"bytes,2,rep,name=version_vector,json=versionVector,proto3" json:"version_vector,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	LastModifiedBy string                 `protobuf:"bytes,3,opt,name=last_modified_by,json=lastModifiedBy,proto3" json:"last_modified_by,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *NodeMetadata) Reset() {
-	*x = NodeMetadata{}
-	mi := &file_election_v1_election_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *NodeMetadata) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*NodeMetadata) ProtoMessage() {}
-
-func (x *NodeMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_election_v1_election_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use NodeMetadata.ProtoReflect.Descriptor instead.
-func (*NodeMetadata) Descriptor() ([]byte, []int) {
-	return file_election_v1_election_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *NodeMetadata) GetLamportClock() uint64 {
-	if x != nil {
-		return x.LamportClock
-	}
-	return 0
-}
-
-func (x *NodeMetadata) GetVersionVector() map[string]uint64 {
-	if x != nil {
-		return x.VersionVector
-	}
-	return nil
-}
-
-func (x *NodeMetadata) GetLastModifiedBy() string {
-	if x != nil {
-		return x.LastModifiedBy
-	}
-	return ""
-}
-
 type RegisterNodeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Sender        *Node                  `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
 	Resources     *NodeResources         `protobuf:"bytes,2,opt,name=resources,proto3" json:"resources,omitempty"`
-	Metadata      *NodeMetadata          `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RegisterNodeRequest) Reset() {
 	*x = RegisterNodeRequest{}
-	mi := &file_election_v1_election_proto_msgTypes[9]
+	mi := &file_election_v1_election_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -496,7 +435,7 @@ func (x *RegisterNodeRequest) String() string {
 func (*RegisterNodeRequest) ProtoMessage() {}
 
 func (x *RegisterNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_election_v1_election_proto_msgTypes[9]
+	mi := &file_election_v1_election_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -509,7 +448,7 @@ func (x *RegisterNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterNodeRequest.ProtoReflect.Descriptor instead.
 func (*RegisterNodeRequest) Descriptor() ([]byte, []int) {
-	return file_election_v1_election_proto_rawDescGZIP(), []int{9}
+	return file_election_v1_election_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RegisterNodeRequest) GetSender() *Node {
@@ -526,13 +465,6 @@ func (x *RegisterNodeRequest) GetResources() *NodeResources {
 	return nil
 }
 
-func (x *RegisterNodeRequest) GetMetadata() *NodeMetadata {
-	if x != nil {
-		return x.Metadata
-	}
-	return nil
-}
-
 type RegisterNodeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
@@ -543,7 +475,7 @@ type RegisterNodeResponse struct {
 
 func (x *RegisterNodeResponse) Reset() {
 	*x = RegisterNodeResponse{}
-	mi := &file_election_v1_election_proto_msgTypes[10]
+	mi := &file_election_v1_election_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -555,7 +487,7 @@ func (x *RegisterNodeResponse) String() string {
 func (*RegisterNodeResponse) ProtoMessage() {}
 
 func (x *RegisterNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_election_v1_election_proto_msgTypes[10]
+	mi := &file_election_v1_election_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -568,7 +500,7 @@ func (x *RegisterNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterNodeResponse.ProtoReflect.Descriptor instead.
 func (*RegisterNodeResponse) Descriptor() ([]byte, []int) {
-	return file_election_v1_election_proto_rawDescGZIP(), []int{10}
+	return file_election_v1_election_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RegisterNodeResponse) GetAccepted() bool {
@@ -591,14 +523,13 @@ type NodeDocument struct {
 	NodeRole      string                 `protobuf:"bytes,2,opt,name=node_role,json=nodeRole,proto3" json:"node_role,omitempty"`
 	Resources     *NodeResources         `protobuf:"bytes,3,opt,name=resources,proto3" json:"resources,omitempty"`
 	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
-	Metadata      *NodeMetadata          `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *NodeDocument) Reset() {
 	*x = NodeDocument{}
-	mi := &file_election_v1_election_proto_msgTypes[11]
+	mi := &file_election_v1_election_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -610,7 +541,7 @@ func (x *NodeDocument) String() string {
 func (*NodeDocument) ProtoMessage() {}
 
 func (x *NodeDocument) ProtoReflect() protoreflect.Message {
-	mi := &file_election_v1_election_proto_msgTypes[11]
+	mi := &file_election_v1_election_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -623,7 +554,7 @@ func (x *NodeDocument) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeDocument.ProtoReflect.Descriptor instead.
 func (*NodeDocument) Descriptor() ([]byte, []int) {
-	return file_election_v1_election_proto_rawDescGZIP(), []int{11}
+	return file_election_v1_election_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *NodeDocument) GetNode() *Node {
@@ -654,13 +585,6 @@ func (x *NodeDocument) GetStatus() string {
 	return ""
 }
 
-func (x *NodeDocument) GetMetadata() *NodeMetadata {
-	if x != nil {
-		return x.Metadata
-	}
-	return nil
-}
-
 var File_election_v1_election_proto protoreflect.FileDescriptor
 
 const file_election_v1_election_proto_rawDesc = "" +
@@ -686,27 +610,18 @@ const file_election_v1_election_proto_rawDesc = "" +
 	"\rNodeResources\x12\x1b\n" +
 	"\tcpu_cores\x18\x01 \x01(\x03R\bcpuCores\x12\x1b\n" +
 	"\tmemory_gb\x18\x02 \x01(\x03R\bmemoryGb\x12%\n" +
-	"\x0ebandwidth_mbps\x18\x03 \x01(\x03R\rbandwidthMbps\"\xf4\x01\n" +
-	"\fNodeMetadata\x12#\n" +
-	"\rlamport_clock\x18\x01 \x01(\x04R\flamportClock\x12S\n" +
-	"\x0eversion_vector\x18\x02 \x03(\v2,.election.v1.NodeMetadata.VersionVectorEntryR\rversionVector\x12(\n" +
-	"\x10last_modified_by\x18\x03 \x01(\tR\x0elastModifiedBy\x1a@\n" +
-	"\x12VersionVectorEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xb1\x01\n" +
+	"\x0ebandwidth_mbps\x18\x03 \x01(\x03R\rbandwidthMbps\"z\n" +
 	"\x13RegisterNodeRequest\x12)\n" +
 	"\x06sender\x18\x01 \x01(\v2\x11.election.v1.NodeR\x06sender\x128\n" +
-	"\tresources\x18\x02 \x01(\v2\x1a.election.v1.NodeResourcesR\tresources\x125\n" +
-	"\bmetadata\x18\x03 \x01(\v2\x19.election.v1.NodeMetadataR\bmetadata\"i\n" +
+	"\tresources\x18\x02 \x01(\v2\x1a.election.v1.NodeResourcesR\tresources\"i\n" +
 	"\x14RegisterNodeResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x125\n" +
-	"\bdocument\x18\x02 \x01(\v2\x19.election.v1.NodeDocumentR\bdocument\"\xdb\x01\n" +
+	"\bdocument\x18\x02 \x01(\v2\x19.election.v1.NodeDocumentR\bdocument\"\xa4\x01\n" +
 	"\fNodeDocument\x12%\n" +
 	"\x04node\x18\x01 \x01(\v2\x11.election.v1.NodeR\x04node\x12\x1b\n" +
 	"\tnode_role\x18\x02 \x01(\tR\bnodeRole\x128\n" +
 	"\tresources\x18\x03 \x01(\v2\x1a.election.v1.NodeResourcesR\tresources\x12\x16\n" +
-	"\x06status\x18\x04 \x01(\tR\x06status\x125\n" +
-	"\bmetadata\x18\x05 \x01(\v2\x19.election.v1.NodeMetadataR\bmetadata2\x8f\x03\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status2\x8f\x03\n" +
 	"\x0fElectionService\x12\\\n" +
 	"\x0fRequestElection\x12#.election.v1.RequestElectionRequest\x1a$.election.v1.RequestElectionResponse\x12h\n" +
 	"\x13AnnounceCoordinator\x12'.election.v1.AnnounceCoordinatorRequest\x1a(.election.v1.AnnounceCoordinatorResponse\x12_\n" +
@@ -725,7 +640,7 @@ func file_election_v1_election_proto_rawDescGZIP() []byte {
 	return file_election_v1_election_proto_rawDescData
 }
 
-var file_election_v1_election_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_election_v1_election_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_election_v1_election_proto_goTypes = []any{
 	(*Node)(nil),                        // 0: election.v1.Node
 	(*RequestElectionRequest)(nil),      // 1: election.v1.RequestElectionRequest
@@ -735,11 +650,9 @@ var file_election_v1_election_proto_goTypes = []any{
 	(*ProcessHeartbeatRequest)(nil),     // 5: election.v1.ProcessHeartbeatRequest
 	(*ProcessHeartbeatResponse)(nil),    // 6: election.v1.ProcessHeartbeatResponse
 	(*NodeResources)(nil),               // 7: election.v1.NodeResources
-	(*NodeMetadata)(nil),                // 8: election.v1.NodeMetadata
-	(*RegisterNodeRequest)(nil),         // 9: election.v1.RegisterNodeRequest
-	(*RegisterNodeResponse)(nil),        // 10: election.v1.RegisterNodeResponse
-	(*NodeDocument)(nil),                // 11: election.v1.NodeDocument
-	nil,                                 // 12: election.v1.NodeMetadata.VersionVectorEntry
+	(*RegisterNodeRequest)(nil),         // 8: election.v1.RegisterNodeRequest
+	(*RegisterNodeResponse)(nil),        // 9: election.v1.RegisterNodeResponse
+	(*NodeDocument)(nil),                // 10: election.v1.NodeDocument
 }
 var file_election_v1_election_proto_depIdxs = []int32{
 	0,  // 0: election.v1.RequestElectionRequest.sender:type_name -> election.v1.Node
@@ -747,27 +660,24 @@ var file_election_v1_election_proto_depIdxs = []int32{
 	0,  // 2: election.v1.AnnounceCoordinatorRequest.coordinator:type_name -> election.v1.Node
 	0,  // 3: election.v1.ProcessHeartbeatRequest.sender:type_name -> election.v1.Node
 	0,  // 4: election.v1.ProcessHeartbeatRequest.coordinator:type_name -> election.v1.Node
-	12, // 5: election.v1.NodeMetadata.version_vector:type_name -> election.v1.NodeMetadata.VersionVectorEntry
-	0,  // 6: election.v1.RegisterNodeRequest.sender:type_name -> election.v1.Node
-	7,  // 7: election.v1.RegisterNodeRequest.resources:type_name -> election.v1.NodeResources
-	8,  // 8: election.v1.RegisterNodeRequest.metadata:type_name -> election.v1.NodeMetadata
-	11, // 9: election.v1.RegisterNodeResponse.document:type_name -> election.v1.NodeDocument
-	0,  // 10: election.v1.NodeDocument.node:type_name -> election.v1.Node
-	7,  // 11: election.v1.NodeDocument.resources:type_name -> election.v1.NodeResources
-	8,  // 12: election.v1.NodeDocument.metadata:type_name -> election.v1.NodeMetadata
-	1,  // 13: election.v1.ElectionService.RequestElection:input_type -> election.v1.RequestElectionRequest
-	3,  // 14: election.v1.ElectionService.AnnounceCoordinator:input_type -> election.v1.AnnounceCoordinatorRequest
-	5,  // 15: election.v1.ElectionService.ProcessHeartbeat:input_type -> election.v1.ProcessHeartbeatRequest
-	9,  // 16: election.v1.ElectionService.RegisterNode:input_type -> election.v1.RegisterNodeRequest
-	2,  // 17: election.v1.ElectionService.RequestElection:output_type -> election.v1.RequestElectionResponse
-	4,  // 18: election.v1.ElectionService.AnnounceCoordinator:output_type -> election.v1.AnnounceCoordinatorResponse
-	6,  // 19: election.v1.ElectionService.ProcessHeartbeat:output_type -> election.v1.ProcessHeartbeatResponse
-	10, // 20: election.v1.ElectionService.RegisterNode:output_type -> election.v1.RegisterNodeResponse
-	17, // [17:21] is the sub-list for method output_type
-	13, // [13:17] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	0,  // 5: election.v1.RegisterNodeRequest.sender:type_name -> election.v1.Node
+	7,  // 6: election.v1.RegisterNodeRequest.resources:type_name -> election.v1.NodeResources
+	10, // 7: election.v1.RegisterNodeResponse.document:type_name -> election.v1.NodeDocument
+	0,  // 8: election.v1.NodeDocument.node:type_name -> election.v1.Node
+	7,  // 9: election.v1.NodeDocument.resources:type_name -> election.v1.NodeResources
+	1,  // 10: election.v1.ElectionService.RequestElection:input_type -> election.v1.RequestElectionRequest
+	3,  // 11: election.v1.ElectionService.AnnounceCoordinator:input_type -> election.v1.AnnounceCoordinatorRequest
+	5,  // 12: election.v1.ElectionService.ProcessHeartbeat:input_type -> election.v1.ProcessHeartbeatRequest
+	8,  // 13: election.v1.ElectionService.RegisterNode:input_type -> election.v1.RegisterNodeRequest
+	2,  // 14: election.v1.ElectionService.RequestElection:output_type -> election.v1.RequestElectionResponse
+	4,  // 15: election.v1.ElectionService.AnnounceCoordinator:output_type -> election.v1.AnnounceCoordinatorResponse
+	6,  // 16: election.v1.ElectionService.ProcessHeartbeat:output_type -> election.v1.ProcessHeartbeatResponse
+	9,  // 17: election.v1.ElectionService.RegisterNode:output_type -> election.v1.RegisterNodeResponse
+	14, // [14:18] is the sub-list for method output_type
+	10, // [10:14] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_election_v1_election_proto_init() }
@@ -781,7 +691,7 @@ func file_election_v1_election_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_election_v1_election_proto_rawDesc), len(file_election_v1_election_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

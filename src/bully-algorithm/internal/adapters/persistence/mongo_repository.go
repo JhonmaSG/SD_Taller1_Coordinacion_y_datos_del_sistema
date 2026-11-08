@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -17,9 +19,6 @@ import (
 
 const clusterMetadataID = "cluster_metadata"
 
-// MongoNodeDocumentRepository persiste los documentos de nodos y el documento
-// global de metadata en la misma colección. Una escritura actualiza ambos
-// documentos dentro de una transacción MongoDB.
 type MongoNodeDocumentRepository struct {
 	client      *mongo.Client
 	collection  *mongo.Collection
@@ -47,14 +46,7 @@ type clusterMetadataBSON struct {
 	LastModifiedBy     string            `bson:"last_modified_by"`
 }
 
-// NewMongoNodeDocumentRepository crea el repositorio y verifica conectividad.
-func NewMongoNodeDocumentRepository(
-	ctx context.Context,
-	uri string,
-	databaseName string,
-	collectionName string,
-	coordinator ports.CoordinatorView,
-) (*MongoNodeDocumentRepository, error) {
+func NewMongoNodeDocumentRepository(ctx context.Context, uri, databaseName, collectionName string, coordinator ports.CoordinatorView) (*MongoNodeDocumentRepository, error) {
 	if ctx == nil {
 		return nil, errors.New("context must not be nil")
 	}
@@ -64,7 +56,6 @@ func NewMongoNodeDocumentRepository(
 	if coordinator == nil {
 		return nil, errors.New("coordinator view must not be nil")
 	}
-
 	client, err := mongo.Connect(options.Client().ApplyURI(uri))
 	if err != nil {
 		return nil, fmt.Errorf("connect to MongoDB: %w", err)
@@ -73,12 +64,7 @@ func NewMongoNodeDocumentRepository(
 		_ = client.Disconnect(context.Background())
 		return nil, fmt.Errorf("ping MongoDB: %w", err)
 	}
-
-	return &MongoNodeDocumentRepository{
-		client:      client,
-		collection:  client.Database(databaseName).Collection(collectionName),
-		coordinator: coordinator,
-	}, nil
+	return &MongoNodeDocumentRepository{client: client, collection: client.Database(databaseName).Collection(collectionName), coordinator: coordinator}, nil
 }
 
 func (r *MongoNodeDocumentRepository) Close(ctx context.Context) error {
@@ -91,185 +77,42 @@ func (r *MongoNodeDocumentRepository) Close(ctx context.Context) error {
 	return r.client.Disconnect(ctx)
 }
 
-// Get recupera el documento de nodo y le adjunta en memoria la metadata global.
-// La metadata no se lee del documento del nodo porque se persiste aparte.
 func (r *MongoNodeDocumentRepository) Get(ctx context.Context, nodeID model.NodeID) (model.NodeDocument, error) {
 	if r == nil || r.collection == nil {
 		return model.NodeDocument{}, errors.New("MongoDB repository is not initialized")
 	}
-
-	var node nodeDocumentBSON
-	if err := r.collection.FindOne(ctx, bson.M{"_id": nodeID.Key()}).Decode(&node); err != nil {
+	var raw nodeDocumentBSON
+	if err := r.collection.FindOne(ctx, bson.M{"_id": nodeID.Key()}).Decode(&raw); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return model.NodeDocument{}, ports.ErrNodeDocumentNotFound
 		}
 		return model.NodeDocument{}, fmt.Errorf("get node document %s: %w", nodeID.Key(), err)
 	}
-
-	result, err := fromNodeBSON(node)
-	if err != nil {
-		return model.NodeDocument{}, err
-	}
-
-	var cluster clusterMetadataBSON
-	if err := r.collection.FindOne(ctx, bson.M{"_id": clusterMetadataID}).Decode(&cluster); err == nil {
-		result.Metadata = fromClusterBSON(cluster)
-	} else if !errors.Is(err, mongo.ErrNoDocuments) {
-		return model.NodeDocument{}, fmt.Errorf("get cluster metadata: %w", err)
-	}
-
-	return result, nil
+	return fromNodeBSON(raw)
 }
 
-// UpdateAtomic reemplaza el documento de nodo y el documento cluster_metadata
-// en una transacción. La precondición CAS se aplica sobre la metadata global.
-func (r *MongoNodeDocumentRepository) UpdateAtomic(
-	ctx context.Context,
-	nodeID model.NodeID,
-	expected model.Metadata,
-	next model.NodeDocument,
-) error {
-	if r == nil || r.collection == nil {
-		return errors.New("MongoDB repository is not initialized")
-	}
-	if r.coordinator == nil || !r.coordinator.IsLocalCoordinator() {
-		return ports.ErrNotCoordinator
-	}
-	if next.ID != nodeID {
-		return errors.New("node document id does not match repository key")
-	}
-	if err := next.Validate(); err != nil {
-		return err
-	}
-
-	activeCoordinator := nodeID
-	if coordinator, ok := r.coordinator.CurrentCoordinator(); ok {
-		activeCoordinator = coordinator.ID
-	}
-	cluster := toClusterBSON(next.Metadata, activeCoordinator)
-	filter := clusterFilter(expected)
-
-	session, err := r.client.StartSession()
-	if err != nil {
-		return fmt.Errorf("start MongoDB session: %w", err)
-	}
-	defer session.EndSession(ctx)
-
-	_, err = session.WithTransaction(ctx, func(sessionContext context.Context) (interface{}, error) {
-		clusterResult, err := r.collection.ReplaceOne(sessionContext, filter, cluster, options.Replace().SetUpsert(true))
-		if err != nil {
-			if strings.Contains(err.Error(), "E11000") {
-				return nil, ports.ErrVersionConflict
-			}
-			return nil, fmt.Errorf("atomic update cluster metadata: %w", err)
-		}
-		if clusterResult.MatchedCount == 0 && clusterResult.UpsertedCount == 0 {
-			return nil, ports.ErrVersionConflict
-		}
-
-		nodeResult, err := r.collection.ReplaceOne(sessionContext, bson.M{"_id": nodeID.Key()}, toNodeBSON(next), options.Replace().SetUpsert(true))
-		if err != nil {
-			return nil, fmt.Errorf("atomic update node document: %w", err)
-		}
-		if nodeResult.MatchedCount == 0 && nodeResult.UpsertedCount == 0 {
-			return nil, ports.ErrVersionConflict
-		}
-		return nil, nil
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func clusterFilter(expected model.Metadata) bson.M {
-	filter := bson.M{"_id": clusterMetadataID}
-	if expected.UpdatedBy == 0 && expected.Lamport == 0 && len(expected.VersionVector) == 0 {
-		return filter
-	}
-	filter["global_lamport_clock"] = uint64(expected.Lamport)
-	filter["last_modified_by"] = expected.UpdatedBy.Key()
-	for nodeKey, counter := range expected.VersionVector {
-		filter["version_vector."+nodeKey] = counter
-	}
-	return filter
-}
-
-func toNodeBSON(document model.NodeDocument) nodeDocumentBSON {
-	return nodeDocumentBSON{
-		ID: document.ID.Key(), NodeRole: string(document.Role),
-		Resources: resourcesBSON{CPUCores: document.Resources.CPUCores, MemoryGB: document.Resources.MemoryGB, BandwidthMbps: document.Resources.BandwidthMbps},
-		Status:    string(document.Status),
-	}
-}
-
-func fromNodeBSON(document nodeDocumentBSON) (model.NodeDocument, error) {
-	nodeID, err := parseNodeKey(document.ID)
-	if err != nil {
-		return model.NodeDocument{}, err
-	}
-	result := model.NodeDocument{
-		ID: nodeID, Role: model.NodeRole(document.NodeRole), Status: model.NodeStatus(document.Status),
-		Resources: model.NodeResources{CPUCores: document.Resources.CPUCores, MemoryGB: document.Resources.MemoryGB, BandwidthMbps: document.Resources.BandwidthMbps},
-	}
-	if err := result.Validate(); err != nil {
-		return model.NodeDocument{}, fmt.Errorf("invalid persisted node document: %w", err)
-	}
-	return result, nil
-}
-
-func toClusterBSON(metadata model.Metadata, activeCoordinator model.NodeID) clusterMetadataBSON {
-	return clusterMetadataBSON{
-		ID: clusterMetadataID, GlobalLamportClock: uint64(metadata.Lamport),
-		VersionVector: metadata.VersionVector.Clone(), ActiveCoordinator: activeCoordinator.Key(), LastModifiedBy: metadata.UpdatedBy.Key(),
-	}
-}
-
-func fromClusterBSON(document clusterMetadataBSON) model.Metadata {
-	updatedBy, _ := parseNodeKey(document.LastModifiedBy)
-	return model.Metadata{Lamport: model.LamportTime(document.GlobalLamportClock), VersionVector: document.VersionVector, UpdatedBy: updatedBy}
-}
-
-func parseNodeKey(value string) (model.NodeID, error) {
-	if !strings.HasPrefix(value, "node_") {
-		return 0, fmt.Errorf("invalid node key %q", value)
-	}
-	rawID := strings.TrimPrefix(value, "node_")
-	id, err := strconv.ParseUint(rawID, 10, 64)
-	if err != nil || id == 0 {
-		return 0, fmt.Errorf("invalid node key %q", value)
-	}
-	return model.NodeID(id), nil
-}
-
-var _ ports.NodeDocumentRepository = (*MongoNodeDocumentRepository)(nil)
-
-// GetClusterMetadata lee el documento global de control.
 func (r *MongoNodeDocumentRepository) GetClusterMetadata(ctx context.Context) (model.ClusterMetadata, error) {
 	if r == nil || r.collection == nil {
 		return model.ClusterMetadata{}, errors.New("MongoDB repository is not initialized")
 	}
-	var document clusterMetadataBSON
-	if err := r.collection.FindOne(ctx, bson.M{"_id": clusterMetadataID}).Decode(&document); err != nil {
+	var raw clusterMetadataBSON
+	if err := r.collection.FindOne(ctx, bson.M{"_id": clusterMetadataID}).Decode(&raw); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return model.ClusterMetadata{}, ports.ErrClusterMetadataNotFound
 		}
 		return model.ClusterMetadata{}, err
 	}
-	active, err := parseNodeKey(document.ActiveCoordinator)
+	active, err := parseNodeKey(raw.ActiveCoordinator)
 	if err != nil {
 		return model.ClusterMetadata{}, err
 	}
-	modified, err := parseNodeKey(document.LastModifiedBy)
+	modified, err := parseNodeKey(raw.LastModifiedBy)
 	if err != nil {
 		return model.ClusterMetadata{}, err
 	}
-	return model.ClusterMetadata{GlobalLamportClock: model.LamportTime(document.GlobalLamportClock), VersionVector: document.VersionVector, ActiveCoordinator: active, LastModifiedBy: modified}, nil
+	return model.ClusterMetadata{GlobalLamportClock: model.LamportTime(raw.GlobalLamportClock), VersionVector: raw.VersionVector, ActiveCoordinator: active, LastModifiedBy: modified}, nil
 }
 
-// UpdateClusterMetadataAtomic registra el evento de cambio de coordinador con
-// CAS sobre la metadata global.
 func (r *MongoNodeDocumentRepository) UpdateClusterMetadataAtomic(ctx context.Context, expected, next model.ClusterMetadata) error {
 	if r == nil || r.collection == nil {
 		return errors.New("MongoDB repository is not initialized")
@@ -277,18 +120,67 @@ func (r *MongoNodeDocumentRepository) UpdateClusterMetadataAtomic(ctx context.Co
 	if r.coordinator == nil || !r.coordinator.IsLocalCoordinator() {
 		return ports.ErrNotCoordinator
 	}
-	filter := clusterFilterFromModel(expected)
-	result, err := r.collection.ReplaceOne(ctx, filter, toClusterBSONFromModel(next), options.Replace().SetUpsert(true))
+	log.Printf("MongoDB write planned operation=cluster_metadata_update lamport=%d vector=%s active_coordinator=%s last_modified_by=%s", next.GlobalLamportClock, formatVersionVector(next.VersionVector), next.ActiveCoordinator.Key(), next.LastModifiedBy.Key())
+	result, err := r.collection.ReplaceOne(ctx, clusterFilter(expected), toClusterBSON(next), options.Replace().SetUpsert(true))
 	if err != nil {
-		return err
+		return mapMongoWriteError(err)
 	}
 	if result.MatchedCount == 0 && result.UpsertedCount == 0 {
+		log.Printf("MongoDB write conflict operation=cluster_metadata_update lamport=%d vector=%s", next.GlobalLamportClock, formatVersionVector(next.VersionVector))
 		return ports.ErrVersionConflict
 	}
+	log.Printf("MongoDB write committed operation=cluster_metadata_update lamport=%d vector=%s active_coordinator=%s", next.GlobalLamportClock, formatVersionVector(next.VersionVector), next.ActiveCoordinator.Key())
 	return nil
 }
 
-func clusterFilterFromModel(expected model.ClusterMetadata) bson.M {
+// UpdateAtomic actualiza cluster_metadata y el documento de nodo dentro de una
+// única transacción. El CAS se aplica sobre la metadata global esperada.
+func (r *MongoNodeDocumentRepository) UpdateAtomic(ctx context.Context, nodeID model.NodeID, expected model.ClusterMetadata, nextCluster model.ClusterMetadata, nextNode model.NodeDocument) error {
+	if r == nil || r.collection == nil {
+		return errors.New("MongoDB repository is not initialized")
+	}
+	if r.coordinator == nil || !r.coordinator.IsLocalCoordinator() {
+		return ports.ErrNotCoordinator
+	}
+	if nextNode.ID != nodeID {
+		return errors.New("node document id does not match repository key")
+	}
+	if err := nextNode.Validate(); err != nil {
+		return err
+	}
+	log.Printf("MongoDB write planned operation=node_and_cluster_update node=%s role=%s status=%s lamport=%d vector=%s active_coordinator=%s", nodeID.Key(), nextNode.Role, nextNode.Status, nextCluster.GlobalLamportClock, formatVersionVector(nextCluster.VersionVector), nextCluster.ActiveCoordinator.Key())
+
+	session, err := r.client.StartSession()
+	if err != nil {
+		return err
+	}
+	defer session.EndSession(ctx)
+	_, err = session.WithTransaction(ctx, func(sc context.Context) (interface{}, error) {
+		clusterResult, err := r.collection.ReplaceOne(sc, clusterFilter(expected), toClusterBSON(nextCluster), options.Replace().SetUpsert(true))
+		if err != nil {
+			return nil, mapMongoWriteError(err)
+		}
+		if clusterResult.MatchedCount == 0 && clusterResult.UpsertedCount == 0 {
+			return nil, ports.ErrVersionConflict
+		}
+		nodeResult, err := r.collection.ReplaceOne(sc, bson.M{"_id": nodeID.Key()}, toNodeBSON(nextNode), options.Replace().SetUpsert(true))
+		if err != nil {
+			return nil, err
+		}
+		if nodeResult.MatchedCount == 0 && nodeResult.UpsertedCount == 0 {
+			return nil, ports.ErrVersionConflict
+		}
+		return nil, nil
+	})
+	if err != nil {
+		log.Printf("MongoDB write failed operation=node_and_cluster_update node=%s lamport=%d vector=%s error=%v", nodeID.Key(), nextCluster.GlobalLamportClock, formatVersionVector(nextCluster.VersionVector), err)
+		return err
+	}
+	log.Printf("MongoDB write committed operation=node_and_cluster_update node=%s role=%s status=%s lamport=%d vector=%s active_coordinator=%s", nodeID.Key(), nextNode.Role, nextNode.Status, nextCluster.GlobalLamportClock, formatVersionVector(nextCluster.VersionVector), nextCluster.ActiveCoordinator.Key())
+	return nil
+}
+
+func clusterFilter(expected model.ClusterMetadata) bson.M {
 	filter := bson.M{"_id": clusterMetadataID}
 	if expected.LastModifiedBy == 0 && expected.GlobalLamportClock == 0 && len(expected.VersionVector) == 0 {
 		return filter
@@ -296,12 +188,60 @@ func clusterFilterFromModel(expected model.ClusterMetadata) bson.M {
 	filter["global_lamport_clock"] = uint64(expected.GlobalLamportClock)
 	filter["active_coordinator"] = expected.ActiveCoordinator.Key()
 	filter["last_modified_by"] = expected.LastModifiedBy.Key()
-	for nodeKey, counter := range expected.VersionVector {
-		filter["version_vector."+nodeKey] = counter
+	for key, counter := range expected.VersionVector {
+		filter["version_vector."+key] = counter
 	}
 	return filter
 }
+func toNodeBSON(node model.NodeDocument) nodeDocumentBSON {
+	return nodeDocumentBSON{ID: node.ID.Key(), NodeRole: string(node.Role), Resources: resourcesBSON{node.Resources.CPUCores, node.Resources.MemoryGB, node.Resources.BandwidthMbps}, Status: string(node.Status)}
+}
 
-func toClusterBSONFromModel(metadata model.ClusterMetadata) clusterMetadataBSON {
+func fromNodeBSON(raw nodeDocumentBSON) (model.NodeDocument, error) {
+	id, err := parseNodeKey(raw.ID)
+	if err != nil {
+		return model.NodeDocument{}, err
+	}
+	node := model.NodeDocument{ID: id, Role: model.NodeRole(raw.NodeRole), Resources: model.NodeResources{CPUCores: raw.Resources.CPUCores, MemoryGB: raw.Resources.MemoryGB, BandwidthMbps: raw.Resources.BandwidthMbps}, Status: model.NodeStatus(raw.Status)}
+	if err := node.Validate(); err != nil {
+		return model.NodeDocument{}, err
+	}
+	return node, nil
+}
+
+func toClusterBSON(metadata model.ClusterMetadata) clusterMetadataBSON {
 	return clusterMetadataBSON{ID: clusterMetadataID, GlobalLamportClock: uint64(metadata.GlobalLamportClock), VersionVector: metadata.VersionVector.Clone(), ActiveCoordinator: metadata.ActiveCoordinator.Key(), LastModifiedBy: metadata.LastModifiedBy.Key()}
+}
+
+func parseNodeKey(value string) (model.NodeID, error) {
+	if !strings.HasPrefix(value, "node_") {
+		return 0, fmt.Errorf("invalid node key %q", value)
+	}
+	id, err := strconv.ParseUint(strings.TrimPrefix(value, "node_"), 10, 64)
+	if err != nil || id == 0 {
+		return 0, fmt.Errorf("invalid node key %q", value)
+	}
+	return model.NodeID(id), nil
+}
+
+func mapMongoWriteError(err error) error {
+	if strings.Contains(err.Error(), "E11000") {
+		return ports.ErrVersionConflict
+	}
+	return err
+}
+
+var _ ports.NodeDocumentRepository = (*MongoNodeDocumentRepository)(nil)
+
+func formatVersionVector(vector model.VersionVector) string {
+	keys := make([]string, 0, len(vector))
+	for key := range vector {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s:%d", key, vector[key]))
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
 }

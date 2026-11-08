@@ -117,10 +117,8 @@ src/bully-algorithm/
 │   │   │   ├── election.go          # ElectionState, ElectionResult
 │   │   │   ├── lamport.go           # LamportClock
 │   │   │   ├── version_vector.go    # VersionVector: Compare, Merge, Increment
-│   │   │   ├── metadata.go          # Metadata = Lamport + vector + UpdatedBy
 │   │   │   ├── node_document.go     # NodeDocument, roles y recursos
-│   │   │   ├── cluster_metadata.go  # Metadata global del cluster
-│   │   │   └── resource.go          # Resource (modelo legado de recurso)
+│   │   │   └── cluster_metadata.go  # Metadata global del cluster
 │   │   └── usecase/
 │   │       ├── bully_election_usecase.go       # Elección Bully
 │   │       ├── cluster_metadata_usecase.go     # Metadata global y liderazgo
@@ -135,7 +133,7 @@ src/bully-algorithm/
 │   │   ├── node_document_repository.go # NodeDocumentRepository + errores de dominio
 │   │   ├── coordinator_view.go       # CoordinatorView (autoridad local)
 │   │   ├── machine_capacity.go       # MachineCapacityReader
-│   │   └── resource_repository.go    # ResourceRepositoryPort (legado)
+│   │   └── follower_status.go         # FollowerStatusWriter
 │   └── adapters/
 │       ├── config/env.go             # Variables de entorno, .env, PEERS
 │       ├── grpc/
@@ -145,8 +143,6 @@ src/bully-algorithm/
 │       │   └── mongo_repository.go   # MongoNodeDocumentRepository (nodes)
 │       ├── system/
 │       │   └── machine_capacity.go   # Lectura de CPU, RAM y red del host
-│       └── mongodb/
-│           └── resource_repository.go # ResourceRepository (legado)
 ├── scripts/deploy_nodos.sh
 ├── buf.yaml / buf.gen.yaml
 ├── go.mod / go.sum
@@ -163,11 +159,10 @@ src/bully-algorithm/
 - **`VersionVector`**: `map[string]uint64` con claves `node_<id>`. Permite
   `Increment`, `Merge` (máximo por nodo) y `Compare`, que devuelve
   `VersionEqual`, `VersionBefore`, `VersionAfter` o `VersionConcurrent`.
-- **`Metadata`**: Lamport, vector y `UpdatedBy`.
-- **`NodeDocument`**: agregado de recursos y rol de un nodo. La metadata de
-  concurrencia se mantiene en memoria al orquestar la escritura, pero se
-  persiste en `cluster_metadata`. `ResolveNodeDocumentConflict` aplica
-  causalidad, después Lamport y por último el ID menor como desempate.
+- **`ClusterMetadata`**: reloj global, vector global, coordinador activo y nodo
+  que produjo la última escritura.
+- **`NodeDocument`**: agregado de recursos y rol de un nodo. No contiene
+  metadata de concurrencia; esa metadata vive en `cluster_metadata`.
 
 ### Puertos
 
@@ -182,10 +177,13 @@ implementan:
 | `NodeDocumentRepository` | `persistence.MongoNodeDocumentRepository` |
 | `CoordinatorView` | `usecase.BullyElectionUseCase` |
 | `MachineCapacityReader` | `system.MachineCapacityReader` |
-| `ResourceRepositoryPort` (legado) | `mongodb.ResourceRepository` |
+| `FollowerStatusWriter` | `RegisterNodeUseCase` |
 
-`NodeDocumentRepository` expone `Get` y `UpdateAtomic`. `UpdateAtomic` recibe la
-metadata leída como precondición y devuelve `ErrVersionConflict` si cambió.
+`NodeDocumentRepository` expone `Get`, `GetClusterMetadata`,
+`UpdateClusterMetadataAtomic` y `UpdateAtomic`. Las actualizaciones de un nodo
+reciben metadata global como precondición y modifican los dos documentos dentro
+de una transacción; `ErrVersionConflict` indica que el cluster cambió desde la
+lectura.
 
 ---
 
@@ -438,8 +436,8 @@ una partición. Ese caso se describe en la sección 13.
 - No se configura `writeConcern` explícito en el código. La escritura usa el
   valor por defecto de la URI o del servidor.
 
-La colección `resources` y `ResourceRepository` son legado. Se conservan para
-compatibilidad, pero ningún flujo activo las llama.
+La colección contiene el documento global `cluster_metadata` y los documentos
+`node_<id>`.
 
 ---
 
@@ -573,8 +571,10 @@ go test ./...
 buf lint
 ```
 
-El proyecto no tiene pruebas unitarias ni de integración todavía. `go test`
-compila los paquetes, pero no ejecuta casos.
+El proyecto tiene pruebas unitarias para modelos, vectores, Lamport, elección,
+metadata global, actualización de recursos, liveness, configuración y filtros
+CAS. Todavía no tiene pruebas de integración contra un Replica Set real ni
+pruebas multi-proceso de extremo a extremo.
 
 ---
 
@@ -591,9 +591,8 @@ compila los paquetes, pero no ejecuta casos.
 | Exclusividad de escritura (casos de uso y repositorio) | Implementado |
 | Vector y Lamport globales por cluster | Implementado |
 | Documento de recursos sin metadata de concurrencia | Implementado |
-| Resolución de conflictos de documentos | Implementado en dominio; no se invoca en ningún flujo |
-| Actualización de recursos por RPC | Caso de uso implementado; sin RPC de entrada |
-| Marcado `OFFLINE` de followers caídos (heartbeats pasivos al coordinador) | Implementado |
+| Registro coordinado y estado OFFLINE | Implementado |
+| Resolución de conflictos de metadata | Implementado en dominio y cubierta por pruebas unitarias |
 | Detección de split-brain, quorum y fencing | No implementado |
 | Término (época) de elección | No implementado |
 | Reconexión automática a MongoDB | Implementado |
@@ -639,11 +638,8 @@ compila los paquetes, pero no ejecuta casos.
    coordinadores. Hoy el CAS evita la sobrescritura silenciosa, pero no
    reconcilia.
 
-9. **Pruebas**: no hay pruebas unitarias ni de integración que cubran la
-   elección, el registro o el cambio de coordinador.
-
-10. **Recursos legados**: `resource.go`, `resource_repository.go` y
-    `mongodb/resource_repository.go` se conservan sin uso activo.
+10. **Pruebas**: no hay pruebas de integración contra un Replica Set real ni
+    pruebas multi-proceso de extremo a extremo.
 
 11. **Seguridad**: gRPC usa transporte sin TLS. Está pensado para una red
     privada como Tailscale.
@@ -667,3 +663,17 @@ registra el primer evento del coordinador:
   "last_modified_by": "node_1"
 }
 ```
+
+### Logs de escritura MongoDB
+
+El adaptador de persistencia registra cada escritura planeada, confirmada o
+rechazada. Ejemplos:
+
+```text
+MongoDB write planned operation=cluster_metadata_update lamport=4 vector={node_1:1, node_2:2, node_3:1} active_coordinator=node_2 last_modified_by=node_2
+MongoDB write committed operation=node_and_cluster_update node=node_3 role=AGENT status=OFFLINE lamport=5 vector={node_1:1, node_2:3, node_3:1} active_coordinator=node_2
+MongoDB write failed operation=node_and_cluster_update node=node_3 lamport=5 vector={...} error=node document version conflict
+```
+
+El vector se ordena al imprimirlo para que dos logs de la misma metadata sean
+comparables aunque los mapas de Go tengan distinto orden interno.
