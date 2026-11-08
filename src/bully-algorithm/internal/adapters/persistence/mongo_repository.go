@@ -15,9 +15,11 @@ import (
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/ports"
 )
 
-// MongoNodeDocumentRepository persiste un documento lógico por nodo. MongoDB
-// replica ese documento entre los miembros del Replica Set; la aplicación no
-// escribe copias manualmente en cada servidor.
+const clusterMetadataID = "cluster_metadata"
+
+// MongoNodeDocumentRepository persiste los documentos de nodos y el documento
+// global de metadata en la misma colección. Una escritura actualiza ambos
+// documentos dentro de una transacción MongoDB.
 type MongoNodeDocumentRepository struct {
 	client      *mongo.Client
 	collection  *mongo.Collection
@@ -29,7 +31,6 @@ type nodeDocumentBSON struct {
 	NodeRole  string        `bson:"node_role"`
 	Resources resourcesBSON `bson:"resources"`
 	Status    string        `bson:"status"`
-	Metadata  metadataBSON  `bson:"metadata"`
 }
 
 type resourcesBSON struct {
@@ -38,10 +39,12 @@ type resourcesBSON struct {
 	BandwidthMbps int64 `bson:"bandwidth_mbps"`
 }
 
-type metadataBSON struct {
-	LamportClock   uint64            `bson:"lamport_clock"`
-	VersionVector  map[string]uint64 `bson:"version_vector"`
-	LastModifiedBy string            `bson:"last_modified_by"`
+type clusterMetadataBSON struct {
+	ID                 string            `bson:"_id"`
+	GlobalLamportClock uint64            `bson:"global_lamport_clock"`
+	VersionVector      map[string]uint64 `bson:"version_vector"`
+	ActiveCoordinator  string            `bson:"active_coordinator"`
+	LastModifiedBy     string            `bson:"last_modified_by"`
 }
 
 // NewMongoNodeDocumentRepository crea el repositorio y verifica conectividad.
@@ -78,7 +81,6 @@ func NewMongoNodeDocumentRepository(
 	}, nil
 }
 
-// Close cierra el pool del driver.
 func (r *MongoNodeDocumentRepository) Close(ctx context.Context) error {
 	if r == nil || r.client == nil {
 		return nil
@@ -86,30 +88,41 @@ func (r *MongoNodeDocumentRepository) Close(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-
 	return r.client.Disconnect(ctx)
 }
 
-// Get recupera el documento del nodo identificado por su NodeID.
+// Get recupera el documento de nodo y le adjunta en memoria la metadata global.
+// La metadata no se lee del documento del nodo porque se persiste aparte.
 func (r *MongoNodeDocumentRepository) Get(ctx context.Context, nodeID model.NodeID) (model.NodeDocument, error) {
 	if r == nil || r.collection == nil {
 		return model.NodeDocument{}, errors.New("MongoDB repository is not initialized")
 	}
 
-	var document nodeDocumentBSON
-	if err := r.collection.FindOne(ctx, bson.M{"_id": nodeID.Key()}).Decode(&document); err != nil {
+	var node nodeDocumentBSON
+	if err := r.collection.FindOne(ctx, bson.M{"_id": nodeID.Key()}).Decode(&node); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return model.NodeDocument{}, ports.ErrNodeDocumentNotFound
 		}
 		return model.NodeDocument{}, fmt.Errorf("get node document %s: %w", nodeID.Key(), err)
 	}
 
-	return fromBSON(document)
+	result, err := fromNodeBSON(node)
+	if err != nil {
+		return model.NodeDocument{}, err
+	}
+
+	var cluster clusterMetadataBSON
+	if err := r.collection.FindOne(ctx, bson.M{"_id": clusterMetadataID}).Decode(&cluster); err == nil {
+		result.Metadata = fromClusterBSON(cluster)
+	} else if !errors.Is(err, mongo.ErrNoDocuments) {
+		return model.NodeDocument{}, fmt.Errorf("get cluster metadata: %w", err)
+	}
+
+	return result, nil
 }
 
-// UpdateAtomic reemplaza el documento solo si su metadata todavía coincide
-// con expected. El filtro compara Lamport, last_modified_by y cada contador del
-// vector, para evitar lost updates sin depender del orden de las claves.
+// UpdateAtomic reemplaza el documento de nodo y el documento cluster_metadata
+// en una transacción. La precondición CAS se aplica sobre la metadata global.
 func (r *MongoNodeDocumentRepository) UpdateAtomic(
 	ctx context.Context,
 	nodeID model.NodeID,
@@ -129,91 +142,166 @@ func (r *MongoNodeDocumentRepository) UpdateAtomic(
 		return err
 	}
 
-	filter := bson.M{"_id": nodeID.Key()}
-	if expected.UpdatedBy != 0 || expected.Lamport != 0 || len(expected.VersionVector) > 0 {
-		filter["metadata.lamport_clock"] = uint64(expected.Lamport)
-		filter["metadata.last_modified_by"] = expected.UpdatedBy.Key()
-		// Cada contador se compara por separado. Comparar el mapa completo como
-		// documento embebido depende del orden de sus claves, y el orden de un
-		// mapa de Go no es estable: el CAS fallaba aunque nadie hubiera escrito.
-		for nodeKey, counter := range expected.VersionVector {
-			filter["metadata.version_vector."+nodeKey] = counter
-		}
+	activeCoordinator := nodeID
+	if coordinator, ok := r.coordinator.CurrentCoordinator(); ok {
+		activeCoordinator = coordinator.ID
 	}
+	cluster := toClusterBSON(next.Metadata, activeCoordinator)
+	filter := clusterFilter(expected)
 
-	result, err := r.collection.ReplaceOne(ctx, filter, toBSON(next), options.Replace().SetUpsert(true))
+	session, err := r.client.StartSession()
 	if err != nil {
-		if strings.Contains(err.Error(), "E11000") {
-			return ports.ErrVersionConflict
-		}
-		return fmt.Errorf("atomic update node document %s: %w", nodeID.Key(), err)
+		return fmt.Errorf("start MongoDB session: %w", err)
 	}
-	if result.MatchedCount == 0 && result.UpsertedCount == 0 {
-		return ports.ErrVersionConflict
+	defer session.EndSession(ctx)
+
+	_, err = session.WithTransaction(ctx, func(sessionContext context.Context) (interface{}, error) {
+		clusterResult, err := r.collection.ReplaceOne(sessionContext, filter, cluster, options.Replace().SetUpsert(true))
+		if err != nil {
+			if strings.Contains(err.Error(), "E11000") {
+				return nil, ports.ErrVersionConflict
+			}
+			return nil, fmt.Errorf("atomic update cluster metadata: %w", err)
+		}
+		if clusterResult.MatchedCount == 0 && clusterResult.UpsertedCount == 0 {
+			return nil, ports.ErrVersionConflict
+		}
+
+		nodeResult, err := r.collection.ReplaceOne(sessionContext, bson.M{"_id": nodeID.Key()}, toNodeBSON(next), options.Replace().SetUpsert(true))
+		if err != nil {
+			return nil, fmt.Errorf("atomic update node document: %w", err)
+		}
+		if nodeResult.MatchedCount == 0 && nodeResult.UpsertedCount == 0 {
+			return nil, ports.ErrVersionConflict
+		}
+		return nil, nil
+	})
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func toBSON(document model.NodeDocument) nodeDocumentBSON {
+func clusterFilter(expected model.Metadata) bson.M {
+	filter := bson.M{"_id": clusterMetadataID}
+	if expected.UpdatedBy == 0 && expected.Lamport == 0 && len(expected.VersionVector) == 0 {
+		return filter
+	}
+	filter["global_lamport_clock"] = uint64(expected.Lamport)
+	filter["last_modified_by"] = expected.UpdatedBy.Key()
+	for nodeKey, counter := range expected.VersionVector {
+		filter["version_vector."+nodeKey] = counter
+	}
+	return filter
+}
+
+func toNodeBSON(document model.NodeDocument) nodeDocumentBSON {
 	return nodeDocumentBSON{
-		ID:        document.ID.Key(),
-		NodeRole:  string(document.Role),
+		ID: document.ID.Key(), NodeRole: string(document.Role),
 		Resources: resourcesBSON{CPUCores: document.Resources.CPUCores, MemoryGB: document.Resources.MemoryGB, BandwidthMbps: document.Resources.BandwidthMbps},
 		Status:    string(document.Status),
-		Metadata: metadataBSON{
-			LamportClock:   uint64(document.Metadata.Lamport),
-			VersionVector:  versionVectorToBSON(document.Metadata.VersionVector),
-			LastModifiedBy: document.Metadata.UpdatedBy.Key(),
-		},
 	}
 }
 
-func fromBSON(document nodeDocumentBSON) (model.NodeDocument, error) {
+func fromNodeBSON(document nodeDocumentBSON) (model.NodeDocument, error) {
 	nodeID, err := parseNodeKey(document.ID)
 	if err != nil {
 		return model.NodeDocument{}, err
 	}
-	updatedBy, err := parseNodeKey(document.Metadata.LastModifiedBy)
-	if err != nil {
-		return model.NodeDocument{}, fmt.Errorf("invalid last_modified_by: %w", err)
-	}
-
 	result := model.NodeDocument{
-		ID:        nodeID,
-		Role:      model.NodeRole(document.NodeRole),
+		ID: nodeID, Role: model.NodeRole(document.NodeRole), Status: model.NodeStatus(document.Status),
 		Resources: model.NodeResources{CPUCores: document.Resources.CPUCores, MemoryGB: document.Resources.MemoryGB, BandwidthMbps: document.Resources.BandwidthMbps},
-		Status:    model.NodeStatus(document.Status),
-		Metadata:  model.Metadata{Lamport: model.LamportTime(document.Metadata.LamportClock), VersionVector: document.Metadata.VersionVector, UpdatedBy: updatedBy},
 	}
 	if err := result.Validate(); err != nil {
 		return model.NodeDocument{}, fmt.Errorf("invalid persisted node document: %w", err)
 	}
-
 	return result, nil
 }
 
-func versionVectorToBSON(vector model.VersionVector) map[string]uint64 {
-	result := make(map[string]uint64, len(vector))
-	for nodeKey, counter := range vector {
-		result[nodeKey] = counter
+func toClusterBSON(metadata model.Metadata, activeCoordinator model.NodeID) clusterMetadataBSON {
+	return clusterMetadataBSON{
+		ID: clusterMetadataID, GlobalLamportClock: uint64(metadata.Lamport),
+		VersionVector: metadata.VersionVector.Clone(), ActiveCoordinator: activeCoordinator.Key(), LastModifiedBy: metadata.UpdatedBy.Key(),
 	}
+}
 
-	return result
+func fromClusterBSON(document clusterMetadataBSON) model.Metadata {
+	updatedBy, _ := parseNodeKey(document.LastModifiedBy)
+	return model.Metadata{Lamport: model.LamportTime(document.GlobalLamportClock), VersionVector: document.VersionVector, UpdatedBy: updatedBy}
 }
 
 func parseNodeKey(value string) (model.NodeID, error) {
 	if !strings.HasPrefix(value, "node_") {
 		return 0, fmt.Errorf("invalid node key %q", value)
 	}
-
 	rawID := strings.TrimPrefix(value, "node_")
 	id, err := strconv.ParseUint(rawID, 10, 64)
 	if err != nil || id == 0 {
 		return 0, fmt.Errorf("invalid node key %q", value)
 	}
-
 	return model.NodeID(id), nil
 }
 
 var _ ports.NodeDocumentRepository = (*MongoNodeDocumentRepository)(nil)
+
+// GetClusterMetadata lee el documento global de control.
+func (r *MongoNodeDocumentRepository) GetClusterMetadata(ctx context.Context) (model.ClusterMetadata, error) {
+	if r == nil || r.collection == nil {
+		return model.ClusterMetadata{}, errors.New("MongoDB repository is not initialized")
+	}
+	var document clusterMetadataBSON
+	if err := r.collection.FindOne(ctx, bson.M{"_id": clusterMetadataID}).Decode(&document); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return model.ClusterMetadata{}, ports.ErrClusterMetadataNotFound
+		}
+		return model.ClusterMetadata{}, err
+	}
+	active, err := parseNodeKey(document.ActiveCoordinator)
+	if err != nil {
+		return model.ClusterMetadata{}, err
+	}
+	modified, err := parseNodeKey(document.LastModifiedBy)
+	if err != nil {
+		return model.ClusterMetadata{}, err
+	}
+	return model.ClusterMetadata{GlobalLamportClock: model.LamportTime(document.GlobalLamportClock), VersionVector: document.VersionVector, ActiveCoordinator: active, LastModifiedBy: modified}, nil
+}
+
+// UpdateClusterMetadataAtomic registra el evento de cambio de coordinador con
+// CAS sobre la metadata global.
+func (r *MongoNodeDocumentRepository) UpdateClusterMetadataAtomic(ctx context.Context, expected, next model.ClusterMetadata) error {
+	if r == nil || r.collection == nil {
+		return errors.New("MongoDB repository is not initialized")
+	}
+	if r.coordinator == nil || !r.coordinator.IsLocalCoordinator() {
+		return ports.ErrNotCoordinator
+	}
+	filter := clusterFilterFromModel(expected)
+	result, err := r.collection.ReplaceOne(ctx, filter, toClusterBSONFromModel(next), options.Replace().SetUpsert(true))
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 && result.UpsertedCount == 0 {
+		return ports.ErrVersionConflict
+	}
+	return nil
+}
+
+func clusterFilterFromModel(expected model.ClusterMetadata) bson.M {
+	filter := bson.M{"_id": clusterMetadataID}
+	if expected.LastModifiedBy == 0 && expected.GlobalLamportClock == 0 && len(expected.VersionVector) == 0 {
+		return filter
+	}
+	filter["global_lamport_clock"] = uint64(expected.GlobalLamportClock)
+	filter["active_coordinator"] = expected.ActiveCoordinator.Key()
+	filter["last_modified_by"] = expected.LastModifiedBy.Key()
+	for nodeKey, counter := range expected.VersionVector {
+		filter["version_vector."+nodeKey] = counter
+	}
+	return filter
+}
+
+func toClusterBSONFromModel(metadata model.ClusterMetadata) clusterMetadataBSON {
+	return clusterMetadataBSON{ID: clusterMetadataID, GlobalLamportClock: uint64(metadata.GlobalLamportClock), VersionVector: metadata.VersionVector.Clone(), ActiveCoordinator: metadata.ActiveCoordinator.Key(), LastModifiedBy: metadata.LastModifiedBy.Key()}
+}

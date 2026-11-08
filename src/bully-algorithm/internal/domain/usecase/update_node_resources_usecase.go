@@ -96,23 +96,21 @@ func (uc *UpdateNodeResourcesUseCase) Update(
 				return model.NodeDocument{}, fmt.Errorf("get node document: %w", err)
 			}
 			current = model.NewNodeDocument(local.ID)
+			if cluster, clusterErr := uc.repository.GetClusterMetadata(ctx); clusterErr == nil {
+				current.Metadata = cluster.AsMetadata()
+			} else if !errors.Is(clusterErr, ports.ErrClusterMetadataNotFound) {
+				return model.NodeDocument{}, fmt.Errorf("get cluster metadata: %w", clusterErr)
+			}
 		} else {
 			expected = current.Metadata.Clone()
 		}
-
-		// Recibir el estado persistido es un evento remoto; la modificación es
-		// un evento local posterior, por eso se aplican Observe y Tick.
-		uc.clock.Observe(current.Metadata.Lamport)
-		lamport := uc.clock.Tick()
 
 		next := current.Clone()
 		next.ID = local.ID
 		next.Role = model.RoleCoordinator
 		next.Status = model.StatusOnline
 		next.Resources = command.Resources
-		next.Metadata.Lamport = lamport
-		next.Metadata.VersionVector.Increment(local.ID)
-		next.Metadata.UpdatedBy = local.ID
+		next.Metadata = current.Metadata.Clone()
 
 		if err := next.Validate(); err != nil {
 			return model.NodeDocument{}, err

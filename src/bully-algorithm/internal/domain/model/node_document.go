@@ -25,8 +25,9 @@ type NodeResources struct {
 	BandwidthMbps int64
 }
 
-// NodeDocument es el agregado que se persiste como un documento por nodo.
-// Los nombres BSON se resuelven exclusivamente en el adaptador MongoDB.
+// NodeDocument es el agregado de recursos y rol del nodo. La metadata que
+// acompaña al agregado en memoria representa el estado global del cluster; en
+// MongoDB se persiste por separado en _id=cluster_metadata.
 type NodeDocument struct {
 	ID        NodeID
 	Role      NodeRole
@@ -56,9 +57,6 @@ func (d NodeDocument) Validate() error {
 	}
 	if d.Status != StatusOnline && d.Status != StatusOffline {
 		return errors.New("node document status is invalid")
-	}
-	if d.Metadata.UpdatedBy == 0 {
-		return errors.New("node document metadata must identify the updater")
 	}
 	if d.Resources.CPUCores < 0 || d.Resources.MemoryGB < 0 || d.Resources.BandwidthMbps < 0 {
 		return errors.New("node resources cannot be negative")

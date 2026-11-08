@@ -6,7 +6,7 @@ Este módulo contiene el proceso Go que ejecuta cada nodo del sistema. Implement
 - Detección de caída del coordinador mediante heartbeats.
 - Registro de la capacidad física de cada nodo como documento en MongoDB.
 - Escritura exclusiva del coordinador sobre la colección de nodos.
-- Vectores de versión y reloj de Lamport por documento, con comparación causal.
+- Vector de versiones y reloj de Lamport globales por cluster, con comparación causal.
 
 Todavía no implementa: asignación de recursos por RPC, detección de particiones
 de red (split-brain), términos de elección ni fencing. Esas partes están listadas
@@ -118,10 +118,13 @@ src/bully-algorithm/
 │   │   │   ├── lamport.go           # LamportClock
 │   │   │   ├── version_vector.go    # VersionVector: Compare, Merge, Increment
 │   │   │   ├── metadata.go          # Metadata = Lamport + vector + UpdatedBy
-│   │   │   ├── node_document.go     # NodeDocument, roles, estados, conflictos
+│   │   │   ├── node_document.go     # NodeDocument, roles y recursos
+│   │   │   ├── cluster_metadata.go  # Metadata global del cluster
 │   │   │   └── resource.go          # Resource (modelo legado de recurso)
 │   │   └── usecase/
 │   │       ├── bully_election_usecase.go       # Elección Bully
+│   │       ├── cluster_metadata_usecase.go     # Metadata global y liderazgo
+│   │       ├── follower_liveness_usecase.go    # OFFLINE de followers
 │   │       ├── process_heartbeat_usecase.go    # Monitor de coordinador
 │   │       ├── register_node_usecase.go        # Registro de nodos y roles
 │   │       └── update_node_resources_usecase.go# Actualización de recursos
@@ -161,9 +164,10 @@ src/bully-algorithm/
   `Increment`, `Merge` (máximo por nodo) y `Compare`, que devuelve
   `VersionEqual`, `VersionBefore`, `VersionAfter` o `VersionConcurrent`.
 - **`Metadata`**: Lamport, vector y `UpdatedBy`.
-- **`NodeDocument`**: agregado persistido por nodo, con rol, recursos, estado y
-  metadata. `ResolveNodeDocumentConflict` aplica causalidad, después Lamport y
-  por último el ID menor como desempate.
+- **`NodeDocument`**: agregado de recursos y rol de un nodo. La metadata de
+  concurrencia se mantiene en memoria al orquestar la escritura, pero se
+  persiste en `cluster_metadata`. `ResolveNodeDocumentConflict` aplica
+  causalidad, después Lamport y por último el ID menor como desempate.
 
 ### Puertos
 
@@ -276,58 +280,60 @@ Lo ejecuta `FollowerLivenessUseCase`, en el arranque (sección 4, paso 10):
 
 ---
 
-## 6. Documentos por nodo
+## 6. Documentos de nodos y metadata global
 
-### 6.1 Forma del documento
+La colección `DB_NODE_COLLECTION` contiene un documento de control del cluster y
+un documento de recursos por cada nodo.
 
-Cada nodo tiene un documento en `DB_NODE_COLLECTION`, con `_id = node_<id>`:
+### 6.1 Documento `cluster_metadata`
+
+Este documento concentra el reloj y el vector global:
 
 ```json
 {
-  "_id": "node_2",
-  "node_role": "FOLLOWER",
+  "_id": "cluster_metadata",
+  "global_lamport_clock": 14,
+  "version_vector": {
+    "node_1": 5,
+    "node_2": 3,
+    "node_3": 6
+  },
+  "active_coordinator": "node_3",
+  "last_modified_by": "node_3"
+}
+```
+
+### 6.2 Documentos de recursos por nodo
+
+Cada nodo tiene un documento separado. Estos documentos no contienen Lamport ni
+vector de versión:
+
+```json
+{
+  "_id": "node_3",
+  "node_role": "COORDINATOR",
   "resources": {
     "cpu_cores": 12,
     "memory_gb": 31,
     "bandwidth_mbps": 100000
   },
-  "status": "ONLINE",
-  "metadata": {
-    "lamport_clock": 3,
-    "version_vector": {
-      "node_1": 0,
-      "node_2": 1,
-      "node_3": 1
-    },
-    "last_modified_by": "node_3"
-  }
+  "status": "ONLINE"
 }
 ```
 
+Los campos son:
+
 - `node_role`: `COORDINATOR` o `FOLLOWER`.
 - `status`: `ONLINE` u `OFFLINE`.
-- `last_modified_by`: nodo que realizó la última escritura del documento. Es el
-  coordinador que la persistió.
+- `resources`: capacidad física detectada en el host.
+- `bandwidth_mbps` se conserva para cada nodo.
 
-### 6.2 Vector por documento
+`MongoNodeDocumentRepository` lee el documento de nodo y le adjunta en memoria
+la metadata global. Al persistir, reemplaza el documento de nodo y el documento
+`cluster_metadata` dentro de una transacción MongoDB.
 
-El vector **no es global**. Cada documento tiene su propio vector, inicializado
-con las claves de todos los nodos conocidos (local + peers) en cero. Cada
-documento evoluciona de forma independiente.
+### 6.3 Registro de followers
 
-- Se incrementa el contador del nodo que escribe el documento.
-- Al registrar un follower, el coordinador fusiona (máximo por clave) el vector
-  guardado del follower con el vector que llega en la solicitud, y después
-  incrementa su propio contador.
-
-### 6.3 Lamport
-
-El reloj de Lamport se mantiene por proceso. Antes de cada escritura se observa
-el Lamport del documento leído o recibido y se avanza un evento local.
-
-### 6.4 Registro de followers
-
-Los followers no escriben en MongoDB:
 
 ```text
 Follower
@@ -346,13 +352,14 @@ Follower
 documento. Si el coordinador no es conocido todavía, el follower no hace nada y
 reintenta en el siguiente ciclo.
 
-### 6.5 Registro del coordinador
+### 6.4 Registro del coordinador
 
-El coordinador escribe su propio documento con `registerLocal`. Si el documento
-ya tiene rol `COORDINATOR`, estado `ONLINE`, los mismos recursos, y contiene
-todas las claves conocidas, no escribe nada.
+El coordinador escribe su propio documento de recursos y actualiza
+`cluster_metadata.active_coordinator`, `global_lamport_clock`,
+`version_vector` y `last_modified_by`. Si no cambió el rol, la capacidad ni el
+vector requerido, no genera una escritura innecesaria.
 
-### 6.6 Cambio de coordinador
+### 6.5 Cambio de coordinador
 
 Cuando un nodo recibe `AnnounceCoordinator` y no es el coordinador:
 
@@ -364,13 +371,19 @@ Cuando un nodo recibe `AnnounceCoordinator` y no es el coordinador:
 Un follower ya registrado con el mismo rol, recursos y coordinador actual no
 produce escritura: el coordinador devuelve el documento sin cambios.
 
-### 6.7 Modelo de vector que se envía
+### 6.6 Vector global y Lamport
 
-El follower envía un vector que contiene únicamente su propio contador en `1`
-y las claves de los demás nodos en `0`, con Lamport `1`. No envía el vector
-guardado en MongoDB. Ver la sección 13.
+El vector y el reloj ya no se almacenan en cada documento `node_<id>`. Viven en
+`cluster_metadata` y se incrementan una vez cuando cambia el coordinador activo.
+La escritura que registra el nuevo liderazgo actualiza `active_coordinator`,
+`global_lamport_clock`, la posición del nuevo coordinador y
+`last_modified_by`. Las escrituras posteriores de documentos de recursos usan
+la metadata global vigente sin incrementar el vector otra vez por cada documento.
 
-### 6.8 Marcado `OFFLINE` de followers caídos
+La metadata global se compara por CAS. Cada contador se filtra por separado en
+MongoDB para que el orden de las claves del mapa no produzca falsos conflictos.
+
+### 6.7 Marcado `OFFLINE` de followers caídos
 
 Lo ejecuta solo el coordinador, mediante `RegisterNodeUseCase.MarkFollowerOffline`:
 
@@ -397,8 +410,8 @@ varios niveles:
    `CoordinatorView.IsLocalCoordinator()`.
    Esto incluye `MarkFollowerOffline` y `FollowerLivenessUseCase.Sweep`.
 2. **Repositorio**: `MongoNodeDocumentRepository.UpdateAtomic` vuelve a
-   verificarlo antes de ejecutar `ReplaceOne`. Si no es coordinador, devuelve
-   `ErrNotCoordinator`.
+   verificarlo antes de ejecutar la transacción que actualiza `cluster_metadata`
+   y el documento del nodo. Si no es coordinador, devuelve `ErrNotCoordinator`.
 3. **Repositorio legado**: `ResourceRepository.Save` aplica la misma barrera.
 
 `IsLocalCoordinator()` consulta el estado de Bully en memoria. No depende de
@@ -414,11 +427,11 @@ una partición. Ese caso se describe en la sección 13.
 
 - La conexión usa `mongo.Connect` con la URI `DB_URI` y verifica con `Ping`.
 - La colección de nodos es `DB_NODE_COLLECTION` (`nodes` por defecto).
-- Las escrituras usan `ReplaceOne` con `upsert` y un filtro CAS sobre
-  `lamport_clock`, `last_modified_by` y cada contador del vector
-  (`metadata.version_vector.node_<id>`). Los contadores se comparan uno a uno:
-  el filtro no depende del orden de las claves. Si el documento cambió después
-  de la lectura, no se actualiza y se devuelve `ErrVersionConflict`.
+- Las escrituras usan `ReplaceOne` dentro de una transacción MongoDB. El CAS
+  filtra `global_lamport_clock`, `last_modified_by` y cada contador del vector
+  global (`version_vector.node_<id>`). Los contadores se comparan uno a uno: el
+  filtro no depende del orden de las claves. Si la metadata cambió después de la
+  lectura, la transacción se aborta y se devuelve `ErrVersionConflict`.
 - La conversión entre `NodeID` y `node_<id>` ocurre solo en el adaptador.
 - MongoDB replica el documento entre los miembros del Replica Set. La aplicación
   no escribe copias por servidor.
@@ -576,13 +589,14 @@ compila los paquetes, pero no ejecuta casos.
 | Registro de followers vía `RegisterNode` | Implementado |
 | Reescritura de rol al cambiar de coordinador | Implementado |
 | Exclusividad de escritura (casos de uso y repositorio) | Implementado |
-| Vector y Lamport por documento | Implementado |
+| Vector y Lamport globales por cluster | Implementado |
+| Documento de recursos sin metadata de concurrencia | Implementado |
 | Resolución de conflictos de documentos | Implementado en dominio; no se invoca en ningún flujo |
 | Actualización de recursos por RPC | Caso de uso implementado; sin RPC de entrada |
 | Marcado `OFFLINE` de followers caídos (heartbeats pasivos al coordinador) | Implementado |
 | Detección de split-brain, quorum y fencing | No implementado |
 | Término (época) de elección | No implementado |
-| Reconexión automática a MongoDB | No implementado |
+| Reconexión automática a MongoDB | Implementado |
 | `writeConcern` explícito | No implementado |
 | Pruebas de integración con varios procesos | No implementado |
 | TLS / mTLS entre nodos | No implementado |
@@ -596,11 +610,10 @@ compila los paquetes, pero no ejecuta casos.
    nodo escriba si él cree ser coordinador. Falta término de elección, fencing
    token y quorum.
 
-2. **Vector de followers**: el follower envía un vector construido en el
-   momento (su contador en 1, Lamport 1), no el vector guardado en su
-   documento. Por eso el contador del follower no refleja el número de cambios
-   de su documento. Corregirlo requiere que el follower lea su documento o que
-   el coordinador conserve el vector canónico.
+2. **Vector global**: el vector se almacena en `cluster_metadata`, no en los
+   documentos de nodos. La posición que se incrementa es la del coordinador que
+   registra cada nuevo liderazgo. Las escrituras de recursos y cambios de
+   estado reutilizan la metadata global vigente.
 
 3. **Coordinador caído**: el nuevo coordinador marca `OFFLINE` y `FOLLOWER` al
    antiguo cuando supera el umbral de heartbeats (sección 5.4). Mientras tanto,
@@ -615,8 +628,8 @@ compila los paquetes, pero no ejecuta casos.
    documento antes de responder al anuncio. Esto acopla el tiempo de respuesta
    del anuncio al tiempo de MongoDB y del coordinador.
 
-6. **Reintento de MongoDB**: la conexión se intenta una sola vez al arrancar.
-   Si la base no responde, el nodo no escribe hasta reiniciarse.
+6. **Reintento de MongoDB**: si la base no responde, el proceso reintenta cada
+   `5s` y conecta la persistencia cuando MongoDB vuelve a estar disponible.
 
 7. **Sin RPC de inventario**: `UpdateNodeResourcesUseCase` existe, pero ningún
    handler gRPC lo invoca. No hay forma remota de asignar recursos.
@@ -634,3 +647,23 @@ compila los paquetes, pero no ejecuta casos.
 
 11. **Seguridad**: gRPC usa transporte sin TLS. Está pensado para una red
     privada como Tailscale.
+
+### Inicialización del primer coordinador
+
+Si `cluster_metadata` ya existe con `active_coordinator=node_1` pero con reloj y
+vector en cero, el siguiente arranque no considera ese documento inicial como
+un evento válido. `ClusterMetadataUseCase` detecta esa combinación incompleta y
+registra el primer evento del coordinador:
+
+```json
+{
+  "global_lamport_clock": 1,
+  "version_vector": {
+    "node_1": 1,
+    "node_2": 0,
+    "node_3": 0
+  },
+  "active_coordinator": "node_1",
+  "last_modified_by": "node_1"
+}
+```

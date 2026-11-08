@@ -94,6 +94,11 @@ func (uc *RegisterNodeUseCase) registerLocal(
 			}
 			current = model.NewNodeDocument(local.ID)
 			current.Metadata.VersionVector = model.NewVersionVector(knownIDs)
+			if cluster, clusterErr := uc.repository.GetClusterMetadata(ctx); clusterErr == nil {
+				current.Metadata = cluster.AsMetadata()
+			} else if !errors.Is(clusterErr, ports.ErrClusterMetadataNotFound) {
+				return model.NodeDocument{}, fmt.Errorf("get cluster metadata: %w", clusterErr)
+			}
 		} else {
 			expected = current.Metadata.Clone()
 			if current.Role == model.RoleCoordinator && current.Status == model.StatusOnline && current.Resources == resources && hasKnownKeys(current.Metadata.VersionVector, knownIDs) {
@@ -106,11 +111,7 @@ func (uc *RegisterNodeUseCase) registerLocal(
 		next.Role = model.RoleCoordinator
 		next.Status = model.StatusOnline
 		next.Resources = resources
-		uc.observeAndTick(current.Metadata.Lamport)
-		next.Metadata.Lamport = uc.clock.Value()
-		next.Metadata.VersionVector = ensureKnownKeys(current.Metadata.VersionVector, knownIDs)
-		next.Metadata.VersionVector.Increment(local.ID)
-		next.Metadata.UpdatedBy = local.ID
+		next.Metadata = current.Metadata.Clone()
 
 		if err := next.Validate(); err != nil {
 			return model.NodeDocument{}, err
@@ -137,6 +138,7 @@ func (uc *RegisterNodeUseCase) RegisterRemote(
 	resources model.NodeResources,
 	metadata model.Metadata,
 ) (model.NodeDocument, error) {
+	_ = metadata
 	if ctx == nil {
 		return model.NodeDocument{}, errors.New("context must not be nil")
 	}
@@ -161,6 +163,11 @@ func (uc *RegisterNodeUseCase) RegisterRemote(
 			}
 			current = model.NewNodeDocument(sender.ID)
 			current.Metadata.VersionVector = model.NewVersionVector(knownIDs)
+			if cluster, clusterErr := uc.repository.GetClusterMetadata(ctx); clusterErr == nil {
+				current.Metadata = cluster.AsMetadata()
+			} else if !errors.Is(clusterErr, ports.ErrClusterMetadataNotFound) {
+				return model.NodeDocument{}, fmt.Errorf("get cluster metadata: %w", clusterErr)
+			}
 		} else {
 			expected = current.Metadata.Clone()
 			if current.Status == model.StatusOnline && current.Role == model.RoleFollower && current.Resources == resources && current.Metadata.UpdatedBy == local.ID && hasKnownKeys(current.Metadata.VersionVector, knownIDs) {
@@ -173,11 +180,7 @@ func (uc *RegisterNodeUseCase) RegisterRemote(
 		next.Role = model.RoleFollower
 		next.Status = model.StatusOnline
 		next.Resources = resources
-		uc.observeAndTick(metadata.Lamport)
-		next.Metadata.Lamport = uc.clock.Value()
-		next.Metadata.VersionVector = ensureKnownKeys(current.Metadata.VersionVector, knownIDs).Merge(metadata.VersionVector)
-		next.Metadata.VersionVector.Increment(local.ID)
-		next.Metadata.UpdatedBy = local.ID
+		next.Metadata = current.Metadata.Clone()
 
 		if err := next.Validate(); err != nil {
 			return model.NodeDocument{}, err
@@ -312,8 +315,11 @@ func (uc *RegisterNodeUseCase) MarkOffline(ctx context.Context) error {
 
 	next := current.Clone()
 	next.Status = model.StatusOffline
+	next.Role = model.RoleFollower
 	uc.observeAndTick(current.Metadata.Lamport)
+	next.Metadata = current.Metadata.Clone()
 	next.Metadata.Lamport = uc.clock.Value()
+	next.Metadata.VersionVector = ensureKnownKeys(current.Metadata.VersionVector, uc.knownNodeIDs())
 	next.Metadata.VersionVector.Increment(local.ID)
 	next.Metadata.UpdatedBy = local.ID
 	return uc.repository.UpdateAtomic(ctx, local.ID, current.Metadata, next)
@@ -360,6 +366,7 @@ func (uc *RegisterNodeUseCase) MarkFollowerOffline(ctx context.Context, nodeID m
 	next.Status = model.StatusOffline
 	next.Role = model.RoleFollower
 	uc.observeAndTick(current.Metadata.Lamport)
+	next.Metadata = current.Metadata.Clone()
 	next.Metadata.Lamport = uc.clock.Value()
 	next.Metadata.VersionVector = ensureKnownKeys(current.Metadata.VersionVector, uc.knownNodeIDs())
 	next.Metadata.VersionVector.Increment(local.ID)

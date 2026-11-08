@@ -8,15 +8,18 @@ import (
 )
 
 var (
-	ErrNodeDocumentNotFound = errors.New("node document not found")
-	ErrVersionConflict      = errors.New("node document version conflict")
-	ErrNotCoordinator       = errors.New("only the active coordinator can write")
+	ErrNodeDocumentNotFound    = errors.New("node document not found")
+	ErrVersionConflict         = errors.New("node document version conflict")
+	ErrClusterMetadataNotFound = errors.New("cluster metadata not found")
+	ErrNotCoordinator          = errors.New("only the active coordinator can write")
 )
 
 // NodeDocumentRepository abstrae lectura y actualización CAS de un documento
 // por nodo. La implementación concreta vive fuera del dominio.
 type NodeDocumentRepository interface {
 	Get(ctx context.Context, nodeID model.NodeID) (model.NodeDocument, error)
+	GetClusterMetadata(ctx context.Context) (model.ClusterMetadata, error)
+	UpdateClusterMetadataAtomic(ctx context.Context, expected, next model.ClusterMetadata) error
 	UpdateAtomic(
 		ctx context.Context,
 		nodeID model.NodeID,

@@ -174,6 +174,22 @@ func (p *persistenceLink) attach(
 	transport ports.NodeRegistrationTransport,
 	electionServer *grpcadapter.ElectionServer,
 ) {
+	clusterMetadata, metadataErr := usecase.NewClusterMetadataUseCase(membership, election, repository)
+	if metadataErr != nil {
+		log.Printf("cluster metadata unavailable: %v", metadataErr)
+	} else {
+		metadataContext, cancelMetadata := context.WithTimeout(ctx, mongoStartupTimeout)
+		if err := clusterMetadata.SyncOnce(metadataContext); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("cluster metadata sync failed, retrying: %v", err)
+		}
+		cancelMetadata()
+		go func() {
+			if err := clusterMetadata.Run(ctx, cfg.HeartbeatInterval, cfg.ElectionTimeout); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("cluster metadata monitor stopped: %v", err)
+			}
+		}()
+	}
+
 	registerNode, err := usecase.NewRegisterNodeUseCase(
 		membership,
 		election,
