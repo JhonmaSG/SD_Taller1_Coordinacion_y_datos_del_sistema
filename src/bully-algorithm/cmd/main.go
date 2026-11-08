@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -22,6 +23,9 @@ import (
 const (
 	mongoStartupTimeout = 10 * time.Second
 	mongoCloseTimeout   = 5 * time.Second
+	// mongoRetryInterval es la pausa entre intentos de conexión a MongoDB
+	// mientras el proceso sigue participando en Bully.
+	mongoRetryInterval = 5 * time.Second
 )
 
 func main() {
@@ -103,45 +107,11 @@ func run() error {
 		}
 	}()
 
-	// MongoDB pertenece al plano de datos. Se intenta inicializar después de la
-	// elección y su indisponibilidad deja al nodo en modo degradado, sin impedir
-	// que participe en Bully o atienda mensajes de otros nodos.
-	repository := initializeRepository(cfg, election)
-	if repository != nil {
-		defer closeRepository(repository)
-		registerNode, registerErr := usecase.NewRegisterNodeUseCase(
-			membership,
-			election,
-			repository,
-			system.NewMachineCapacityReader(),
-			transport,
-		)
-		if registerErr != nil {
-			log.Printf("node registration unavailable: %v", registerErr)
-		} else {
-			registerContext, cancelRegister := context.WithTimeout(context.Background(), mongoStartupTimeout)
-			doc, registerErr := registerNode.Register(registerContext)
-			cancelRegister()
-			if registerErr != nil {
-				log.Printf("node document registration failed: %v", registerErr)
-			} else {
-				electionServer.SetRegistrationUseCase(registerNode)
-				log.Printf("machine capacity registered cpu_cores=%d memory_gb=%d bandwidth_mbps=%d", doc.Resources.CPUCores, doc.Resources.MemoryGB, doc.Resources.BandwidthMbps)
-				go func() {
-					if err := registerNode.Run(runtimeContext, cfg.HeartbeatInterval); err != nil && !errors.Is(err, context.Canceled) {
-						log.Printf("node document role monitor stopped: %v", err)
-					}
-				}()
-				defer func() {
-					offlineContext, cancelOffline := context.WithTimeout(context.Background(), mongoCloseTimeout)
-					defer cancelOffline()
-					if err := registerNode.MarkOffline(offlineContext); err != nil {
-						log.Printf("mark node offline: %v", err)
-					}
-				}()
-			}
-		}
-	}
+	// MongoDB pertenece al plano de datos. La conexión se reintenta en segundo
+	// plano: si la base no está disponible al arrancar, el nodo sigue en Bully
+	// y se conecta en cuanto MongoDB responda.
+	persist := &persistenceLink{}
+	go persist.connect(runtimeContext, cfg, membership, election, transport, electionServer)
 
 	log.Printf(
 		"node %d started with %d peer(s), MongoDB database=%s collection=%s heartbeat=%s",
@@ -152,7 +122,132 @@ func run() error {
 		cfg.HeartbeatInterval,
 	)
 
-	return waitForShutdown(grpcServer, serverErrors, stopRuntime)
+	shutdownErr := waitForShutdown(grpcServer, serverErrors, stopRuntime)
+	persist.shutdown()
+	return shutdownErr
+}
+
+// persistenceLink agrupa la conexión a MongoDB y los casos de uso que dependen
+// de ella. Se crea antes de conectar y se completa cuando la base responde.
+type persistenceLink struct {
+	mu           sync.Mutex
+	repository   *persistence.MongoNodeDocumentRepository
+	registration *usecase.RegisterNodeUseCase
+	closed       bool
+}
+
+// connect intenta conectar a MongoDB hasta que lo consigue o el contexto se
+// cancela. Cada intento espera mongoRetryInterval después del fallo anterior.
+func (p *persistenceLink) connect(
+	ctx context.Context,
+	cfg config.Config,
+	membership ports.MembershipPort,
+	election *usecase.BullyElectionUseCase,
+	transport ports.NodeRegistrationTransport,
+	electionServer *grpcadapter.ElectionServer,
+) {
+	for {
+		repository := initializeRepository(cfg, election)
+		if repository != nil {
+			p.attach(ctx, cfg, membership, election, repository, transport, electionServer)
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(mongoRetryInterval):
+		}
+	}
+}
+
+// attach conecta los casos de uso de registro y de vigilancia de followers. Los
+// casos de uso se conectan antes del primer registro: si ese registro falla por
+// un problema transitorio, el nodo sigue aceptando RegisterNode y el bucle
+// periódico reintenta.
+func (p *persistenceLink) attach(
+	ctx context.Context,
+	cfg config.Config,
+	membership ports.MembershipPort,
+	election *usecase.BullyElectionUseCase,
+	repository *persistence.MongoNodeDocumentRepository,
+	transport ports.NodeRegistrationTransport,
+	electionServer *grpcadapter.ElectionServer,
+) {
+	registerNode, err := usecase.NewRegisterNodeUseCase(
+		membership,
+		election,
+		repository,
+		system.NewMachineCapacityReader(),
+		transport,
+	)
+	if err != nil {
+		log.Printf("node registration unavailable: %v", err)
+		closeRepository(repository)
+		return
+	}
+
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		closeRepository(repository)
+		return
+	}
+	p.repository = repository
+	p.registration = registerNode
+	p.mu.Unlock()
+
+	electionServer.SetRegistrationUseCase(registerNode)
+
+	registerContext, cancelRegister := context.WithTimeout(ctx, mongoStartupTimeout)
+	doc, firstErr := registerNode.Register(registerContext)
+	cancelRegister()
+	switch {
+	case firstErr != nil:
+		log.Printf("node document registration failed, retrying every %s: %v", cfg.HeartbeatInterval, firstErr)
+	case doc.ID != 0:
+		log.Printf("machine capacity registered cpu_cores=%d memory_gb=%d bandwidth_mbps=%d", doc.Resources.CPUCores, doc.Resources.MemoryGB, doc.Resources.BandwidthMbps)
+	}
+
+	// Solo el coordinador vigila a los followers. El umbral usa TIMEOUT_MS:
+	// un follower sin heartbeats durante ese tiempo se marca OFFLINE.
+	liveness, err := usecase.NewFollowerLivenessUseCase(membership, election, registerNode, cfg.ElectionTimeout)
+	if err != nil {
+		log.Printf("follower liveness unavailable: %v", err)
+	} else {
+		electionServer.SetFollowerLiveness(liveness)
+		go func() {
+			if err := liveness.Run(ctx, cfg.HeartbeatInterval, cfg.ElectionTimeout); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("follower liveness monitor stopped: %v", err)
+			}
+		}()
+	}
+
+	go func() {
+		if err := registerNode.Run(ctx, cfg.HeartbeatInterval, cfg.ElectionTimeout); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("node document role monitor stopped: %v", err)
+		}
+	}()
+}
+
+// shutdown se ejecuta al terminar el proceso. Marca OFFLINE al nodo si era
+// coordinador y cierra la conexión. Para followers, MarkOffline no escribe.
+func (p *persistenceLink) shutdown() {
+	p.mu.Lock()
+	p.closed = true
+	registration, repository := p.registration, p.repository
+	p.mu.Unlock()
+
+	if registration != nil {
+		offlineContext, cancelOffline := context.WithTimeout(context.Background(), mongoCloseTimeout)
+		if err := registration.MarkOffline(offlineContext); err != nil {
+			log.Printf("mark node offline: %v", err)
+		}
+		cancelOffline()
+	}
+	if repository != nil {
+		closeRepository(repository)
+	}
 }
 
 func startElection(election *usecase.BullyElectionUseCase, timeout time.Duration) error {
@@ -197,7 +292,8 @@ func initializeRepository(cfg config.Config, coordinator ports.CoordinatorView) 
 	)
 	if err != nil {
 		log.Printf(
-			"MongoDB unavailable, node continues in degraded mode; inventory operations are disabled: %v",
+			"MongoDB unavailable, retrying in %s; node keeps participating in Bully: %v",
+			mongoRetryInterval,
 			err,
 		)
 		return nil

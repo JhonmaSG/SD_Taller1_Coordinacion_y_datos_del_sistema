@@ -23,6 +23,13 @@ type ElectionServer struct {
 	electionUseCase     *usecase.BullyElectionUseCase
 	heartbeatUseCase    *usecase.ProcessHeartbeatUseCase
 	registrationUseCase *usecase.RegisterNodeUseCase
+	livenessUseCase     *usecase.FollowerLivenessUseCase
+}
+
+// SetFollowerLiveness conecta el registro de latidos de followers. Solo tiene
+// efecto mientras el nodo local es coordinador.
+func (s *ElectionServer) SetFollowerLiveness(liveness *usecase.FollowerLivenessUseCase) {
+	s.livenessUseCase = liveness
 }
 
 // NewElectionServer crea un servidor gRPC conectado a los casos de uso de
@@ -180,6 +187,9 @@ func (s *ElectionServer) ProcessHeartbeat(
 	alive, err := s.heartbeatUseCase.HandleHeartbeat(sender, coordinator)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "%v", err)
+	}
+	if alive && s.livenessUseCase != nil {
+		s.livenessUseCase.RecordHeartbeat(sender.ID)
 	}
 
 	return &electionpb.ProcessHeartbeatResponse{Alive: alive}, nil

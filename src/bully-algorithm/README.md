@@ -1,44 +1,86 @@
 # Nodo distribuido de inventario
 
-Este módulo contiene el proceso Go de cada nodo del sistema distribuido. La
-primera capacidad implementada es la elección de coordinador mediante el
-algoritmo del Matón (Bully) sobre gRPC. También incluye la conexión inicial al
-Replica Set de MongoDB y el adaptador de persistencia para recursos.
+Este módulo contiene el proceso Go que ejecuta cada nodo del sistema. Implementa:
 
-> El proceso inicializa MongoDB y verifica su disponibilidad, pero todavía no
-> ejecuta un caso de uso de inventario que lea o escriba recursos. La elección,
-> la detección de caída del coordinador, la asignación de recursos y la
-> replicación son capacidades separadas.
+- Elección de coordinador con el algoritmo del Matón (Bully) sobre gRPC.
+- Detección de caída del coordinador mediante heartbeats.
+- Registro de la capacidad física de cada nodo como documento en MongoDB.
+- Escritura exclusiva del coordinador sobre la colección de nodos.
+- Vectores de versión y reloj de Lamport por documento, con comparación causal.
 
-## 1. Cómo se ejecuta el proceso
+Todavía no implementa: asignación de recursos por RPC, detección de particiones
+de red (split-brain), términos de elección ni fencing. Esas partes están listadas
+en la sección 13.
 
-El módulo tiene su propio `go.mod`, por lo que los comandos se ejecutan desde
-`src/bully-algorithm`:
+---
+
+## 1. Ejecución
+
+Todos los comandos se ejecutan desde `src/bully-algorithm`.
 
 ```powershell
 Set-Location src/bully-algorithm
-Copy-Item ..\..\.env.example .env
-
-go mod download
+Copy-Item ..\..\.env.example .env   # primera vez; luego editar .env
 go run ./cmd
 ```
 
-Cada nodo debe tener su propio archivo `.env`. El archivo se carga de manera
-opcional al iniciar. Si una variable ya existe en el entorno del sistema, esa
-variable tiene prioridad sobre el archivo.
+El proceso carga `.env` si existe. Las variables ya definidas en el entorno
+tienen prioridad sobre el archivo.
 
-El punto de entrada es:
+### Tres nodos en la misma máquina
 
-```text
-cmd/main.go
+Opciones:
+
+- **Script** (Git Bash o WSL, desde la raíz del repositorio):
+
+  ```bash
+  bash scripts/levantar_nodos_local.sh
+  ```
+
+  Compila el binario una vez y levanta los nodos 1, 2 y 3 en `127.0.0.1:5001`,
+  `5002` y `5003`. Los logs quedan en `.runtime/local-nodes/logs/`.
+
+- **Manual**: una terminal por nodo, con `$env:` para `NODE_ID`, `NODE_PORT` y
+  `PEERS`. Cada `$env:` tiene prioridad sobre el `.env`.
+
+### Despliegue en VMs
+
+```bash
+NODES="usuario1@100.x.x.1 usuario2@100.x.x.2 usuario3@100.x.x.3" \
+  bash src/bully-algorithm/scripts/deploy_nodos.sh
 ```
 
-`main.go` ejecuta el ensamblaje de dependencias y después mantiene vivo el
-servidor gRPC hasta recibir `Ctrl+C` o `SIGTERM`.
+`scripts/deploy_nodos.sh` compila un binario `linux/amd64` estático y lo copia
+por SSH a cada VM (`/home/<usuario>/test/nodo` por defecto). No modifica los
+`.env` de los nodos; cada VM debe tener su propio `.env`.
+
+---
 
 ## 2. Configuración
 
-Las variables soportadas son:
+Variables leídas por `internal/adapters/config/env.go`:
+
+| Variable | Obligatoria | Por defecto | Descripción |
+|---|---|---|---|
+| `NODE_ID` | Sí | — | Identificador numérico del nodo (entero positivo). Define la prioridad Bully. |
+| `NODE_HOST` | Sí | — | IP o host con el que el nodo se anuncia a los demás. |
+| `NODE_PORT` | No | `5000` | Puerto del servidor gRPC. |
+| `LISTEN_ADDRESS` | No | `NODE_HOST:NODE_PORT` | Dirección de escucha, si es distinta del anuncio. |
+| `PEERS` | No | vacío | Lista `<id>@<host>:<port>` separada por comas. Sin el ID no hay prioridad. |
+| `TIMEOUT_MS` | No | `3000` | Límite de cada RPC de elección, de cada heartbeat y del anuncio `COORDINATOR`. También es el tiempo sin heartbeats a partir del cual el coordinador marca un follower como `OFFLINE`. |
+| `HEARTBEAT_MS` | No | `1000` | Periodo del monitor de heartbeats y de la sincronización de registro. |
+| `DB_URI` | Sí | — | URI de MongoDB. Para el Replica Set: `?replicaSet=rs-grupo`. |
+| `DB_NAME` | No | `inventory` | Base de datos. |
+| `DB_NODE_COLLECTION` | No | `nodes` | Colección con un documento por nodo. |
+
+Notas:
+
+- `DB_COLLECTION` (nombre antiguo) ya no se usa en el flujo de nodos.
+- CPU, memoria y ancho de banda **no** se configuran. Se leen de la máquina
+  (sección 9.4).
+- `PEERS` no debe incluir al nodo local. La validación lo rechaza.
+
+Ejemplo para el nodo 1:
 
 ```env
 NODE_ID=1
@@ -52,784 +94,543 @@ DB_NAME=inventory
 DB_NODE_COLLECTION=nodes
 ```
 
-### Identidad y dirección
+---
 
-- `NODE_ID` es el identificador numérico usado por Bully.
-- `NODE_HOST` es la dirección local de Tailscale o la dirección de escucha.
-- `NODE_PORT` tiene `5000` como valor predeterminado.
-- `LISTEN_ADDRESS` puede sobrescribir la combinación `NODE_HOST:NODE_PORT`.
+## 3. Arquitectura hexagonal
 
-### Peers
-
-`PEERS` utiliza el formato explícito:
-
-```text
-<id>@<host>:<port>,<id>@<host>:<port>
-```
-
-Ejemplo:
-
-```env
-PEERS=2@100.x.x.2:5000,3@100.x.x.3:5000
-```
-
-El ID debe formar parte de la configuración porque el algoritmo no puede
-inferir la prioridad de un nodo a partir de su dirección IP. Los IDs deben ser
-positivos, únicos y no pueden repetir el ID local.
-
-### Heartbeat
-
-`HEARTBEAT_MS` define cada cuánto un nodo seguidor consulta al coordinador
-actual. Si el heartbeat falla, el nodo inicia una nueva elección con Bully.
-El valor predeterminado es `1000` milisegundos.
-
-## 3. Flujo de arranque de `main.go`
-
-El flujo de composición es:
-
-```text
-.env opcional
-    │
-    ▼
-config.LoadFromEnv()
-    │
-    ├── model.Node local
-    ├── []model.Node peers
-    ├── dirección de escucha
-    ├── timeout de elección
-    └── URI y nombres de MongoDB
-    │
-    ▼
-config.NewStaticMembership()
-    │
-    ▼
-grpcadapter.NewElectionTransport()
-    │
-    ▼
-usecase.NewBullyElectionUseCase()
-    │
-    ▼
-net.Listen() + grpc.Server.Serve()
-    │
-    ▼
-election.Start()
-    │
-    ▼
-MongoDB (modo operativo o degradado)
-    │
-    ├── mongo.Connect()
-    ├── Ping() del Replica Set
-    └── repositorio listo si la BD responde
-```
-
-El servidor gRPC se inicia antes de la elección para que el nodo pueda recibir
-solicitudes `ELECTION` mientras participa en su propia ronda. La elección no
-espera a que MongoDB esté disponible: la coordinación es el plano de control y
-la base de datos es el plano de datos. Si MongoDB no responde, el nodo continúa
-en modo degradado y las operaciones de inventario quedan deshabilitadas hasta
-que exista una estrategia de reconexión.
-
-1. `GracefulStop()` detiene el servidor gRPC.
-2. Se cierra el listener TCP.
-3. Se desconecta el cliente MongoDB mediante `Close()`.
-4. Se liberan los recursos del proceso.
-
-Si falla la configuración o la escucha TCP, el proceso termina con un error
-explícito. Si falla el `Ping` de MongoDB, el proceso registra una advertencia y
-continúa con el plano de coordinación activo. Esto permite que el nodo
-participe en Bully aunque el Replica Set esté incompleto o temporalmente sin
-primary. Las asignaciones de inventario deben permanecer deshabilitadas hasta
-que MongoDB vuelva a estar disponible.
-
-## 4. Arquitectura de carpetas
+El código separa el dominio de la infraestructura. El dominio (`internal/domain`)
+no importa gRPC, MongoDB, BSON ni APIs del sistema operativo.
 
 ```text
 src/bully-algorithm/
 ├── cmd/
-│   └── main.go
-├── proto/
-│   └── election/v1/election.proto
+│   └── main.go                      # Composición de dependencias y ciclo de vida
+├── proto/election/v1/
+│   └── election.proto               # Contrato gRPC
 ├── election/v1/
-│   ├── election.pb.go
-│   └── election_grpc.pb.go
+│   ├── election.pb.go               # Generado por buf
+│   └── election_grpc.pb.go          # Generado por buf
 ├── internal/
 │   ├── domain/
-│   │   ├── model/
+│   │   ├── model/                   # Entidades y reglas puras
+│   │   │   ├── node.go              # Node, NodeID, prioridad Bully, Key()
+│   │   │   ├── election.go          # ElectionState, ElectionResult
+│   │   │   ├── lamport.go           # LamportClock
+│   │   │   ├── version_vector.go    # VersionVector: Compare, Merge, Increment
+│   │   │   ├── metadata.go          # Metadata = Lamport + vector + UpdatedBy
+│   │   │   ├── node_document.go     # NodeDocument, roles, estados, conflictos
+│   │   │   └── resource.go          # Resource (modelo legado de recurso)
 │   │   └── usecase/
-│   ├── ports/
+│   │       ├── bully_election_usecase.go       # Elección Bully
+│   │       ├── process_heartbeat_usecase.go    # Monitor de coordinador
+│   │       ├── register_node_usecase.go        # Registro de nodos y roles
+│   │       └── update_node_resources_usecase.go# Actualización de recursos
+│   ├── ports/                        # Interfaces que el dominio necesita
+│   │   ├── membership.go             # MembershipPort
+│   │   ├── election_transport.go     # ElectionTransportPort (ELECTION, COORDINATOR, heartbeat)
+│   │   ├── node_registration.go      # NodeRegistrationTransport (RegisterNode)
+│   │   ├── node_document_repository.go # NodeDocumentRepository + errores de dominio
+│   │   ├── coordinator_view.go       # CoordinatorView (autoridad local)
+│   │   ├── machine_capacity.go       # MachineCapacityReader
+│   │   └── resource_repository.go    # ResourceRepositoryPort (legado)
 │   └── adapters/
-│       ├── config/
+│       ├── config/env.go             # Variables de entorno, .env, PEERS
 │       ├── grpc/
+│       │   ├── election_server.go    # Servidor gRPC (entrada)
+│       │   └── election_transport.go # Cliente gRPC (salida)
+│       ├── persistence/
+│       │   └── mongo_repository.go   # MongoNodeDocumentRepository (nodes)
+│       ├── system/
+│       │   └── machine_capacity.go   # Lectura de CPU, RAM y red del host
 │       └── mongodb/
-├── buf.yaml
-├── buf.gen.yaml
-├── go.mod
-└── go.sum
+│           └── resource_repository.go # ResourceRepository (legado)
+├── scripts/deploy_nodos.sh
+├── buf.yaml / buf.gen.yaml
+├── go.mod / go.sum
+└── README.md
 ```
 
-### Dominio: `internal/domain`
+### Dominio
 
-El dominio no importa MongoDB, gRPC ni paquetes de infraestructura.
+- **`Node` y `NodeID`**: identidad numérica. La prioridad Bully es `ID` mayor.
+  `NodeID.Key()` devuelve la clave textual `node_<id>`, usada en vectores y en
+  MongoDB.
+- **`LamportClock`**: `Tick()` para eventos locales y `Observe(remote)` para
+  recepciones. La regla es `max(local, remoto) + 1`.
+- **`VersionVector`**: `map[string]uint64` con claves `node_<id>`. Permite
+  `Increment`, `Merge` (máximo por nodo) y `Compare`, que devuelve
+  `VersionEqual`, `VersionBefore`, `VersionAfter` o `VersionConcurrent`.
+- **`Metadata`**: Lamport, vector y `UpdatedBy`.
+- **`NodeDocument`**: agregado persistido por nodo, con rol, recursos, estado y
+  metadata. `ResolveNodeDocumentConflict` aplica causalidad, después Lamport y
+  por último el ID menor como desempate.
 
-Modelos principales:
+### Puertos
 
-- `model/node.go`: identidad, dirección lógica y prioridad de nodos.
-- `model/election.go`: estados y resultados de la elección.
-- `model/resource.go`: recurso de inventario.
-- `model/metadata.go`: timestamp de Lamport, vector de versiones y nodo
-  actualizador.
-- `model/lamport.go`: reloj lógico de Lamport.
-- `model/version_vector.go`: comparación causal, concurrencia y fusión de
-  versiones.
+Los puertos son interfaces definidas en `internal/ports`. Los adaptadores los
+implementan:
 
-El caso de uso de elección está en:
+| Puerto | Implementado por |
+|---|---|
+| `MembershipPort` | `config.StaticMembership` |
+| `ElectionTransportPort` | `grpc.ElectionTransport` |
+| `NodeRegistrationTransport` | `grpc.ElectionTransport` |
+| `NodeDocumentRepository` | `persistence.MongoNodeDocumentRepository` |
+| `CoordinatorView` | `usecase.BullyElectionUseCase` |
+| `MachineCapacityReader` | `system.MachineCapacityReader` |
+| `ResourceRepositoryPort` (legado) | `mongodb.ResourceRepository` |
+
+`NodeDocumentRepository` expone `Get` y `UpdateAtomic`. `UpdateAtomic` recibe la
+metadata leída como precondición y devuelve `ErrVersionConflict` si cambió.
+
+---
+
+## 4. Arranque del proceso (`cmd/main.go`)
+
+El orden actual es:
 
 ```text
-internal/domain/usecase/bully_election_usecase.go
+1. Cargar .env (opcional) y validar la configuración
+2. Crear membresía estática (local + peers)
+3. Crear BullyElectionUseCase (timeout TIMEOUT_MS)
+4. Crear ProcessHeartbeatUseCase (HEARTBEAT_MS)
+5. Crear ElectionServer y abrir el listener TCP
+6. Iniciar el servidor gRPC en una goroutine
+7. Ejecutar la elección inicial (Start, bloqueante hasta TIMEOUT_MS)
+8. Iniciar el monitor de heartbeats
+9. Conectar a MongoDB (initializeRepository)
+     - Si falla: se registra advertencia y el nodo sigue en modo degradado
+10. Si hay conexión:
+      - Crear RegisterNodeUseCase
+      - Registrar el nodo (Register, con timeout de 10 s)
+      - Conectar el caso de uso al servidor gRPC (SetRegistrationUseCase)
+      - Iniciar el bucle de registro periódico (Run)
+      - Crear FollowerLivenessUseCase (umbral TIMEOUT_MS) y su bucle de barrido
+      - Al apagar: MarkOffline (solo si el nodo es coordinador)
+11. Esperar SIGINT/SIGTERM o un error del servidor
+12. GracefulStop del servidor gRPC y cierre de MongoDB
 ```
 
-`BullyElectionUseCase` depende únicamente de interfaces de puertos. Su
-responsabilidad es decidir cuándo preguntar a nodos superiores, cuándo
-proclamarse coordinador y cuándo aceptar un anuncio.
+Si falla la configuración o la escucha TCP, el proceso termina con error. Si
+MongoDB no está disponible, el nodo sigue participando en Bully y reintenta la
+conexión cada `5s`. Cuando MongoDB vuelve a responder, el proceso conecta el
+repositorio, registra el nodo y activa la vigilancia de followers sin reiniciar.
 
-### Puertos: `internal/ports`
+---
 
-Los puertos definen contratos estables entre el dominio y la infraestructura:
+## 5. Algoritmo Bully
 
-```go
-type MembershipPort interface {
-    LocalNode() model.Node
-    Peers() []model.Node
-}
-```
+### 5.1 Elección
 
-Este contrato permite que la membresía provenga de variables de entorno, un
-servicio de descubrimiento o una configuración remota.
+`BullyElectionUseCase.Start`:
 
-```go
-type ElectionTransportPort interface {
-    RequestElection(context.Context, model.Node, model.Node) (bool, error)
-    AnnounceCoordinator(context.Context, model.Node, model.Node, model.Node) error
-}
-```
+1. Obtiene la membresía y excluye al nodo local de la lista de peers.
+2. Selecciona los peers con ID mayor que el local.
+3. Envía `RequestElection` a esos peers en paralelo.
+4. Si alguno responde `acknowledged=true`, el nodo queda en
+   `ElectionWaitingForCoordinator` y espera un `AnnounceCoordinator`.
+5. Si ninguno responde dentro de `TIMEOUT_MS`, el nodo se proclama
+   `ElectionCoordinator` y envía `AnnounceCoordinator` a todos los peers, con un
+   timeout propio.
 
-El caso de uso no sabe que el transporte final es gRPC.
+Un vencimiento de contexto se interpreta como "peer no disponible", no como
+fallo de la elección. Solo una cancelación explícita aborta la ronda.
 
-```go
-type ResourceRepositoryPort interface {
-    FindByID(context.Context, string) (model.Resource, error)
-    Save(context.Context, model.Resource) error
-}
-```
+### 5.2 Mensajes entrantes
 
-Este último contrato prepara los casos de uso de inventario para que no
-conozcan MongoDB.
+- `RequestElection`: si el receptor tiene ID mayor que el candidato, responde
+  `acknowledged=true` e inicia su propia elección en segundo plano.
+- `AnnounceCoordinator`: valida que el coordinador pertenezca a la membresía,
+  actualiza el estado local a `ElectionFollowing` o `ElectionCoordinator` y
+  responde `accepted=true`. Si el nodo es follower, también ejecuta el registro
+  de su documento (sección 6).
 
-### Adaptadores: `internal/adapters`
+### 5.3 Heartbeat
 
-#### Configuración
+`ProcessHeartbeatUseCase` corre cada `HEARTBEAT_MS`. Si el nodo es follower,
+envía `ProcessHeartbeat` al coordinador conocido:
 
-`internal/adapters/config/env.go` implementa:
+- Respuesta `alive=true`: no hace nada.
+- Error o timeout: registra el fallo e inicia una nueva elección.
 
-- Lectura y validación de variables de entorno.
-- Carga opcional de `.env` con la biblioteca estándar.
-- Parsing de `PEERS`.
-- `StaticMembership`, implementación de `MembershipPort`.
+El coordinador responde `alive=true` solo si el mensaje llega dirigido a él y
+si, en su propio estado, sigue siendo coordinador.
 
-#### gRPC
+El coordinador también usa estos mismos heartbeats para vigilar a los followers
+(diseño pasivo): cada vez que responde `alive=true` anota la hora del último
+heartbeat del emisor en `FollowerLivenessUseCase`. No hay tráfico adicional.
 
-`internal/adapters/grpc/election_transport.go` implementa el puerto de salida.
-Abre una conexión al peer, serializa el mensaje protobuf y ejecuta el RPC.
+### 5.4 Vigilancia de followers por el coordinador
 
-`internal/adapters/grpc/election_server.go` implementa el puerto de entrada.
-Recibe mensajes gRPC, valida su contenido, los convierte a modelos de dominio
-y delega en `BullyElectionUseCase`.
+Lo ejecuta `FollowerLivenessUseCase`, en el arranque (sección 4, paso 10):
 
-#### MongoDB
+- Al ser elegido, el coordinador asigna a cada peer un periodo de gracia de
+  `TIMEOUT_MS`, contado desde el primer barrido.
+- Cada `HEARTBEAT_MS` ejecuta un barrido. Si un follower no envió heartbeat
+  durante más de `TIMEOUT_MS`, el coordinador lo marca `OFFLINE` con rol
+  `FOLLOWER` mediante una escritura CAS.
+- Un follower marcado se marca una sola vez hasta que vuelva a enviar
+  heartbeats. Su documento vuelve a `ONLINE` cuando se registra de nuevo con el
+  coordinador (`RegisterNode`).
+- Si el nodo deja de ser coordinador, olvida el estado del liderazgo anterior.
 
-`internal/adapters/mongodb/resource_repository.go` implementa el repositorio
-para recursos. Se encarga de:
+---
 
-- Crear el cliente MongoDB.
-- Ejecutar `Ping` durante el arranque.
-- Buscar recursos por ID.
-- Insertar o reemplazar recursos con `ReplaceOne` y `upsert`.
-- Convertir el vector de versiones entre Go y BSON.
-- Cerrar el pool de conexiones durante el apagado.
+## 6. Documentos por nodo
 
-## 5. Flujo del algoritmo Bully
+### 6.1 Forma del documento
 
-Supongamos tres nodos:
-
-```text
-Nodo 1
-Nodo 2
-Nodo 3
-```
-
-El nodo con el ID más alto tiene mayor prioridad para ser coordinador.
-
-### 5.1 Inicio de una ronda
-
-`main.go` llama:
-
-```go
-result, err := election.Start(ctx)
-```
-
-`BullyElectionUseCase.Start` hace lo siguiente:
-
-1. Obtiene el nodo local y los peers mediante `MembershipPort`.
-2. Valida IDs y elimina el nodo local de la lista de peers.
-3. Filtra los peers cuyo ID es mayor que el local.
-4. Envía un `ELECTION` concurrentemente a cada peer superior.
-5. Cuenta las respuestas afirmativas.
-
-Si el nodo local es el nodo 1, consulta a los nodos 2 y 3. Si es el nodo 3,
-no consulta a nadie porque no existen IDs superiores.
-
-### 5.2 Mensaje `ELECTION`
-
-El contrato está en:
-
-```text
-proto/election/v1/election.proto
-```
-
-```protobuf
-rpc RequestElection(RequestElectionRequest)
-    returns (RequestElectionResponse);
-```
-
-El cliente envía:
-
-```protobuf
-RequestElectionRequest {
-  sender: {
-    id: 1,
-    address: "100.x.x.1:5000"
-  }
-}
-```
-
-El servidor remoto recibe el mensaje en:
-
-```go
-ElectionServer.RequestElection()
-```
-
-Después delega en:
-
-```go
-BullyElectionUseCase.HandleElection()
-```
-
-Si el nodo receptor tiene un ID mayor que el solicitante:
-
-1. Responde `acknowledged=true`.
-2. Inicia su propia elección en segundo plano.
-
-Si no tiene mayor prioridad, responde `acknowledged=false`.
-
-### 5.3 Nodo superior disponible
-
-Si el nodo local recibe al menos una respuesta afirmativa, pasa a:
-
-```text
-ElectionWaitingForCoordinator
-```
-
-Eso significa que otro nodo con mayor prioridad está activo y debe continuar
-la elección.
-
-### 5.4 Ningún nodo superior disponible
-
-Si ningún nodo superior responde, el nodo local se proclama coordinador:
-
-```text
-ElectionCoordinator
-```
-
-Luego envía `COORDINATOR` a todos los peers conocidos, no únicamente a los
-nodos inferiores.
-
-### 5.5 Mensaje `COORDINATOR`
-
-El contrato define:
-
-```protobuf
-rpc AnnounceCoordinator(AnnounceCoordinatorRequest)
-    returns (AnnounceCoordinatorResponse);
-```
-
-El receptor procesa el anuncio en:
-
-```go
-ElectionServer.AnnounceCoordinator()
-```
-
-El caso de uso verifica que el coordinador pertenezca a la membresía conocida.
-Si es válido:
-
-- El nodo remoto pasa a `ElectionFollowing`.
-- Se guarda el coordinador recibido.
-- Se responde `accepted=true`.
-
-Si el anuncio no es válido, se devuelve un error gRPC de tipo
-`FailedPrecondition`.
-
-## 6. Manejo de errores
-
-Los errores de configuración detienen el arranque:
-
-- `NODE_ID` ausente o inválido.
-- `NODE_HOST` vacío.
-- IDs de peers duplicados.
-- Entrada `PEERS` sin formato `<id>@<address>`.
-- `DB_URI` ausente.
-- MongoDB no disponible.
-- Puerto local ocupado.
-
-Los errores de comunicación durante una elección no detienen toda la ronda.
-Una conexión fallida se interpreta como ausencia de respuesta del peer. El
-vencimiento normal de `TIMEOUT_MS` también se interpreta como ausencia de
-respuesta, no como un error fatal de la elección. Por ejemplo, si el nodo 1
-inicia con los nodos 2 y 3 apagados, espera el timeout, se proclama coordinador
-y continúa ejecutando. Si uno de los nodos superiores responde `acknowledged=true`,
-el nodo local espera el anuncio del coordinador porque existe evidencia de un
-nodo de mayor prioridad activo.
-
-Si el nodo local se proclama coordinador y no logra enviar un anuncio, el ID del peer
-se guarda en `AnnouncementFailures`.
-
-Las solicitudes gRPC mal formadas se rechazan con códigos adecuados:
-
-- `InvalidArgument` para mensajes inválidos.
-- `FailedPrecondition` para nodos desconocidos o estados no válidos.
-
-## 7. Conexión con MongoDB
-
-La infraestructura documentada en `infra/setup_mongodb.md` usa el Replica Set:
-
-```text
-rs-grupo
-```
-
-Por eso la URI debe utilizar el mismo nombre:
-
-```text
-mongodb://100.x.x.1:27017,100.x.x.2:27017,100.x.x.3:27017/?replicaSet=rs-grupo
-```
-
-El flujo de conexión es:
-
-```text
-DB_URI
-  │
-  ▼
-mongo.Connect(options.Client().ApplyURI(DB_URI))
-  │
-  ▼
-client.Ping(ctx, nil)
-  │
-  ▼
-client.Database(DB_NAME).Collection(DB_NODE_COLLECTION)
-```
-
-El driver mantiene un pool de conexiones y MongoDB decide qué miembro del
-Replica Set atiende cada operación. La aplicación no debe asumir que el nodo
-coordinador de Bully es el primary de MongoDB. Son elecciones distintas:
-
-```text
-Bully:
-    coordina las asignaciones y operaciones de la aplicación.
-
-MongoDB Replica Set:
-    elige el primary que atiende las operaciones de escritura de MongoDB.
-```
-
-La implementación actual persiste los metadatos del recurso como:
+Cada nodo tiene un documento en `DB_NODE_COLLECTION`, con `_id = node_<id>`:
 
 ```json
 {
-  "_id": "cpu-nodo-1",
-  "name": "CPU",
-  "quantity": 4,
+  "_id": "node_2",
+  "node_role": "FOLLOWER",
+  "resources": {
+    "cpu_cores": 12,
+    "memory_gb": 31,
+    "bandwidth_mbps": 100000
+  },
+  "status": "ONLINE",
   "metadata": {
-    "lamport": 12,
+    "lamport_clock": 3,
     "version_vector": {
-      "1": 7,
-      "2": 3
+      "node_1": 0,
+      "node_2": 1,
+      "node_3": 1
     },
-    "updated_by": 1
+    "last_modified_by": "node_3"
   }
 }
 ```
 
-El caso de uso de inventario todavía debe decidir cuándo llamar a `Save` y cómo
-resolver una versión concurrente antes de persistirla.
+- `node_role`: `COORDINATOR` o `FOLLOWER`.
+- `status`: `ONLINE` u `OFFLINE`.
+- `last_modified_by`: nodo que realizó la última escritura del documento. Es el
+  coordinador que la persistió.
 
-## 8. Librerías utilizadas
+### 6.2 Vector por documento
 
-### gRPC y protobuf
+El vector **no es global**. Cada documento tiene su propio vector, inicializado
+con las claves de todos los nodos conocidos (local + peers) en cero. Cada
+documento evoluciona de forma independiente.
 
-```text
-google.golang.org/grpc v1.76.0
-google.golang.org/protobuf v1.36.6
-```
+- Se incrementa el contador del nodo que escribe el documento.
+- Al registrar un follower, el coordinador fusiona (máximo por clave) el vector
+  guardado del follower con el vector que llega en la solicitud, y después
+  incrementa su propio contador.
 
-Se utilizan para:
+### 6.3 Lamport
 
-- Crear el servidor gRPC.
-- Crear el cliente gRPC.
-- Serializar mensajes protobuf.
-- Registrar el servicio `ElectionService`.
+El reloj de Lamport se mantiene por proceso. Antes de cada escritura se observa
+el Lamport del documento leído o recibido y se avanza un evento local.
 
-Los stubs se generan usando:
+### 6.4 Registro de followers
 
-```text
-protoc-gen-go
-protoc-gen-go-grpc
-```
-
-La configuración de generación está en:
+Los followers no escriben en MongoDB:
 
 ```text
-buf.yaml
-buf.gen.yaml
+Follower
+  │ lee CPU, RAM y red del host (una vez por proceso)
+  │ RegisterNode(sender, resources, metadata) ──────────────► Coordinador
+  │                                                              │
+  │                                              RegisterRemote: │
+  │                                              - valida el sender
+  │                                              - fusiona vectores
+  │                                              - incrementa su contador
+  │                                              - UpdateAtomic (CAS)
+  │◄──────────────────────────────── RegisterNodeResponse ───────┘
 ```
 
-Para regenerar los archivos:
+`RegisterNode` es la única vía por la que un follower logra que se escriba su
+documento. Si el coordinador no es conocido todavía, el follower no hace nada y
+reintenta en el siguiente ciclo.
+
+### 6.5 Registro del coordinador
+
+El coordinador escribe su propio documento con `registerLocal`. Si el documento
+ya tiene rol `COORDINATOR`, estado `ONLINE`, los mismos recursos, y contiene
+todas las claves conocidas, no escribe nada.
+
+### 6.6 Cambio de coordinador
+
+Cuando un nodo recibe `AnnounceCoordinator` y no es el coordinador:
+
+1. Actualiza su estado a follower.
+2. Ejecuta `Register`, que envía `RegisterNode` al nuevo coordinador.
+3. El nuevo coordinador reescribe el documento del follower con rol
+   `FOLLOWER` y `last_modified_by` igual a su propio ID.
+
+Un follower ya registrado con el mismo rol, recursos y coordinador actual no
+produce escritura: el coordinador devuelve el documento sin cambios.
+
+### 6.7 Modelo de vector que se envía
+
+El follower envía un vector que contiene únicamente su propio contador en `1`
+y las claves de los demás nodos en `0`, con Lamport `1`. No envía el vector
+guardado en MongoDB. Ver la sección 13.
+
+### 6.8 Marcado `OFFLINE` de followers caídos
+
+Lo ejecuta solo el coordinador, mediante `RegisterNodeUseCase.MarkFollowerOffline`:
+
+1. Lee el documento del follower.
+2. Si ya está `OFFLINE` y es `FOLLOWER`, no hace nada.
+3. Si no, escribe `status=OFFLINE`, `node_role=FOLLOWER`, avanza el Lamport
+   del coordinador, incrementa su contador en el vector y actualiza
+   `last_modified_by`.
+4. La escritura usa CAS. Si hay conflicto, el barrido siguiente lo reintenta.
+
+El coordinador no se marca a sí mismo. El nodo que deja de ser coordinador
+conserva su documento hasta que el nuevo coordinador lo reescriba como
+follower o lo marque `OFFLINE`.
+
+---
+
+## 7. Autoridad de escritura
+
+Solo el coordinador local puede escribir documentos. La regla se aplica en
+varios niveles:
+
+1. **Casos de uso**: `RegisterRemote`, `registerLocal`,
+   `UpdateNodeResourcesUseCase.Update` y `MarkOffline` verifican
+   `CoordinatorView.IsLocalCoordinator()`.
+   Esto incluye `MarkFollowerOffline` y `FollowerLivenessUseCase.Sweep`.
+2. **Repositorio**: `MongoNodeDocumentRepository.UpdateAtomic` vuelve a
+   verificarlo antes de ejecutar `ReplaceOne`. Si no es coordinador, devuelve
+   `ErrNotCoordinator`.
+3. **Repositorio legado**: `ResourceRepository.Save` aplica la misma barrera.
+
+`IsLocalCoordinator()` consulta el estado de Bully en memoria. No depende de
+lo que diga el campo `node_role` de MongoDB.
+
+Esta barrera protege contra escrituras de un nodo que cree no ser coordinador.
+No protege contra dos nodos que se crean coordinadores al mismo tiempo durante
+una partición. Ese caso se describe en la sección 13.
+
+---
+
+## 8. Persistencia MongoDB
+
+- La conexión usa `mongo.Connect` con la URI `DB_URI` y verifica con `Ping`.
+- La colección de nodos es `DB_NODE_COLLECTION` (`nodes` por defecto).
+- Las escrituras usan `ReplaceOne` con `upsert` y un filtro CAS sobre
+  `lamport_clock`, `last_modified_by` y cada contador del vector
+  (`metadata.version_vector.node_<id>`). Los contadores se comparan uno a uno:
+  el filtro no depende del orden de las claves. Si el documento cambió después
+  de la lectura, no se actualiza y se devuelve `ErrVersionConflict`.
+- La conversión entre `NodeID` y `node_<id>` ocurre solo en el adaptador.
+- MongoDB replica el documento entre los miembros del Replica Set. La aplicación
+  no escribe copias por servidor.
+- No se configura `writeConcern` explícito en el código. La escritura usa el
+  valor por defecto de la URI o del servidor.
+
+La colección `resources` y `ResourceRepository` son legado. Se conservan para
+compatibilidad, pero ningún flujo activo las llama.
+
+---
+
+## 8.1 Modo degradado
+
+Si MongoDB no responde al arrancar:
+
+- La elección Bully y los heartbeats siguen funcionando.
+- El nodo registra `MongoDB unavailable, retrying in 5s`.
+- El proceso reintenta conectar en segundo plano.
+- Al reconectar, registra el documento local y activa la persistencia de roles y
+  la vigilancia de followers.
+
+No es necesario reiniciar el proceso cuando MongoDB vuelve a estar disponible.
+
+---
+
+## 9. Protocolo gRPC
+
+Servicio `election.v1.ElectionService`, definido en
+`proto/election/v1/election.proto`:
+
+| RPC | Request | Response | Uso |
+|---|---|---|---|
+| `RequestElection` | `RequestElectionRequest` | `RequestElectionResponse` | ELECTION de Bully |
+| `AnnounceCoordinator` | `AnnounceCoordinatorRequest` | `AnnounceCoordinatorResponse` | COORDINATOR |
+| `ProcessHeartbeat` | `ProcessHeartbeatRequest` | `ProcessHeartbeatResponse` | Heartbeat al coordinador |
+| `RegisterNode` | `RegisterNodeRequest` | `RegisterNodeResponse` | Registro de capacidad |
+
+Mensajes compartidos: `Node`, `NodeResources`, `NodeMetadata` (con
+`map<string, uint64> version_vector`) y `NodeDocument`.
+
+Generación:
 
 ```powershell
 buf generate
+buf lint
 ```
 
-Los archivos generados son:
+Los archivos `election/v1/*.pb.go` se generan. No se editan a mano.
 
-```text
-election/v1/election.pb.go
-election/v1/election_grpc.pb.go
-```
+---
 
-No deben editarse manualmente. El archivo fuente es el `.proto`.
+## 9.1 Manejo de errores
 
-### MongoDB
+Errores de configuración: detienen el arranque (`NODE_ID`, `NODE_HOST`,
+`PEERS` mal formado o con IDs duplicados, `DB_URI` ausente, puerto ocupado).
 
-```text
-go.mongodb.org/mongo-driver/v2 v2.4.0
-```
+Errores de red durante una elección o heartbeat: se interpretan como peer no
+disponible. No detienen la ronda.
 
-Se utiliza para crear el cliente, ejecutar `Ping`, consultar recursos y guardar
-reemplazos con `upsert`.
+Errores de gRPC:
 
-### Biblioteca estándar de Go
+- `InvalidArgument`: mensaje mal formado.
+- `FailedPrecondition`: nodo desconocido, estado no válido o coordinador no
+  autorizado.
+- `Unavailable`: persistencia de registro no conectada.
 
-La aplicación utiliza la biblioteca estándar para:
+---
 
-- `context`: cancelación y timeouts.
-- `net`: listener TCP.
-- `os` y `os/signal`: entorno y apagado ordenado.
-- `sync`: protección del estado del caso de uso.
-- `time`: timeouts.
-- `encoding` no es necesario para el protocolo de elección porque se utiliza
-  protobuf.
+## 9.2 Anuncio `COORDINATOR` y registro
 
-## 9. Comandos de validación
+El receptor de `AnnounceCoordinator` ejecuta el registro de su documento dentro
+de la misma llamada gRPC, antes de responder. El coordinador espera esa
+respuesta hasta el timeout de anuncio. Si el registro tarda, el anuncio puede
+marcarse como fallido aunque el receptor haya cambiado de rol.
+
+---
+
+## 9.3 Heartbeat y monitor de registro
+
+Dos goroutines reciben el contexto de ejecución:
+
+- Monitor de heartbeats: `ProcessHeartbeatUseCase.Run`.
+- Monitor de registro: `RegisterNodeUseCase.Run`. Llama a `Register` en cada
+  tick de `HEARTBEAT_MS`.
+
+El monitor de registro envía `RegisterNode` en cada tick cuando el nodo es
+follower. Como el coordinador no escribe si nada cambió, no genera escrituras
+en MongoDB, pero sí tráfico gRPC.
+
+---
+
+## 9.4 Capacidad física
+
+`system.MachineCapacityReader` obtiene:
+
+- `cpu_cores`: `runtime.NumCPU()`.
+- `memory_gb`:
+  - Linux: `MemTotal` de `/proc/meminfo`.
+  - Windows: `Win32_ComputerSystem.TotalPhysicalMemory` mediante PowerShell.
+- `bandwidth_mbps`:
+  - Linux: `/sys/class/net/*/speed` (máximo de interfaces no loopback).
+  - Windows: `Get-NetAdapter` con estado `Up` (máximo de `LinkSpeed`).
+
+La lectura ocurre una vez por proceso, en el primer `Register`, y queda en
+caché. Si la lectura falla, no se guarda nada y se reintenta en el siguiente
+ciclo. Si el sistema no informa la velocidad de enlace, `bandwidth_mbps` queda
+en `0`.
+
+---
+
+## 10. Dependencias
+
+Módulo Go: `github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm`
+
+| Dependencia | Versión | Uso |
+|---|---|---|
+| `google.golang.org/grpc` | v1.76.0 | Servidor y cliente gRPC |
+| `google.golang.org/protobuf` | v1.36.6 | Serialización protobuf |
+| `go.mongodb.org/mongo-driver/v2` | v2.4.0 | Driver de MongoDB |
+
+Herramientas de desarrollo (no son dependencias del módulo):
+
+- `buf`: lint y generación de código protobuf.
+- `protoc-gen-go` y `protoc-gen-go-grpc`: plugins usados por `buf generate`.
+
+Biblioteca estándar: `context`, `sync`, `time`, `net`, `os`, `os/exec`,
+`os/signal`, `runtime`, `bufio`, `strconv`, `strings`.
+
+---
+
+## 11. Validación
 
 Desde `src/bully-algorithm`:
 
 ```powershell
+gofmt -l .
+go vet ./cmd ./internal/...
+go test ./...
 buf lint
-buf generate
-go test ./cmd ./election/v1 ./internal/...
-go vet ./internal/...
 ```
 
-## 10. Limitaciones actuales
-
-Esta implementación deja preparados los componentes, pero todavía faltan:
-
-- Reintento automático si llega `OK` pero no llega `COORDINATOR`.
-- Caso de uso de asignación de recursos.
-- Sincronización entre réplicas.
-- Adaptación del estado del coordinador a la autorización de asignaciones.
-- Pruebas de integración con tres procesos reales.
-- TLS mTLS para gRPC fuera de la red privada.
-- Elección formal de MongoDB frente a Redis en `ADR-002`.
-
-La elección Bully ya está separada de esos componentes. Esto permite agregar
-los casos de uso posteriores sin cambiar el contrato protobuf ni introducir
-MongoDB dentro del dominio.
-
-## 11. Ejecutar tres nodos en local
-
-Para probar Bully sin levantar tres máquinas, el repositorio incluye:
-
-```text
-scripts/levantar_nodos_local.sh
-```
-
-El script compila una única vez el binario y levanta tres procesos con esta
-configuración:
-
-```text
-Nodo 1 → 127.0.0.1:5001
-Nodo 2 → 127.0.0.1:5002
-Nodo 3 → 127.0.0.1:5003
-```
-
-Cada proceso recibe una membresía completa y el nodo 3 tiene la prioridad más
-alta. El script reutiliza `DB_URI`, `DB_NAME`, `DB_NODE_COLLECTION`, `TIMEOUT_MS` y
-`HEARTBEAT_MS` desde `src/bully-algorithm/.env`.
-
-Desde Git Bash o WSL, ejecutar en la raíz del repositorio:
-
-```bash
-bash scripts/levantar_nodos_local.sh
-```
-
-Los logs se escriben en:
-
-```text
-.runtime/local-nodes/logs/node1.log
-.runtime/local-nodes/logs/node2.log
-.runtime/local-nodes/logs/node3.log
-```
-
-Presionar `Ctrl+C` en la terminal del script detiene los tres procesos. El
-binario y los logs quedan dentro de `.runtime/`, que está excluido mediante
-`.gitignore`.
-
-En Windows PowerShell sin Git Bash ni WSL, el archivo `.sh` no se puede ejecutar
-directamente. En ese caso se puede instalar Git Bash o usar las tres terminales
-PowerShell con `go run ./cmd` y las variables `NODE_ID`, `NODE_PORT` y `PEERS`
-configuradas por proceso.
-
-## 12. Detección de caída del coordinador
-
-El caso de uso `ProcessHeartbeatUseCase` está en:
-
-```text
-internal/domain/usecase/process_heartbeat_usecase.go
-```
-
-Cada nodo supervisa periódicamente al coordinador que conoce. El intervalo se
-configura con `HEARTBEAT_MS` y usa `TIMEOUT_MS` como límite de cada heartbeat y
-de la elección posterior.
-
-El flujo es:
-
-```text
-Nodo seguidor
-    │
-    ├── ProcessHeartbeat ──> Coordinador
-    │
-    ├── alive=true
-    │       └── continúa supervisando
-    │
-    └── timeout/error
-            │
-            └── inicia una nueva elección Bully
-```
-
-El RPC se define en `proto/election/v1/election.proto`:
-
-```protobuf
-rpc ProcessHeartbeat(HeartbeatRequest) returns (HeartbeatResponse);
-```
-
-Si el coordinador 2 se apaga mientras el nodo 1 está activo:
-
-1. El nodo 1 deja de recibir respuestas.
-2. El heartbeat agota su timeout.
-3. El nodo 1 inicia `BullyElectionUseCase.Start`.
-4. Los nodos 2 y 3 que no respondan se consideran caídos.
-5. El nodo 1 se proclama coordinador si es el nodo activo con mayor ID.
-6. El nodo 1 anuncia `COORDINATOR` a los peers disponibles.
-
-El monitor se inicia desde `cmd/main.go` después de la elección inicial y se
-detiene mediante el mismo contexto de apagado ordenado del servidor gRPC.
-
-## 13. Documentos por nodo y control de concurrencia
-
-La persistencia de nodos usa la colección configurada por
-`DB_NODE_COLLECTION`, cuyo valor predeterminado es `nodes`. Cada proceso
-registra únicamente su propio documento lógico; MongoDB Replica Set replica ese
-documento entre sus miembros.
-
-Ejemplo persistido:
-
-```json
-{
-  "_id": "node_1",
-  "node_role": "COORDINATOR",
-  "resources": {
-    "cpu_cores": 2,
-    "memory_gb": 3,
-    "bandwidth_mbps": 1000
-  },
-  "status": "ONLINE",
-  "metadata": {
-    "lamport_clock": 15,
-    "version_vector": {
-      "node_1": 6,
-      "node_2": 2,
-      "node_3": 2
-    },
-    "last_modified_by": "node_1"
-  }
-}
-```
-
-Los modelos de dominio están en:
-
-```text
-internal/domain/model/node_document.go
-internal/domain/model/lamport.go
-internal/domain/model/version_vector.go
-internal/domain/model/metadata.go
-```
-
-El caso de uso de actualización está en:
-
-```text
-internal/domain/usecase/update_node_resources_usecase.go
-```
-
-Antes de modificar recursos, el caso de uso:
-
-1. Verifica mediante `CoordinatorView` que el nodo local sea el coordinador.
-2. Lee el documento actual mediante `NodeDocumentRepository`.
-3. Observa el Lamport remoto y avanza el reloj para el evento local.
-4. Incrementa el contador `version_vector[node_id]`.
-5. Actualiza `last_modified_by`.
-6. Intenta el reemplazo atómico con el metadata leído como precondición.
-7. Reintenta conflictos de versión limitadamente, sin sobrescribir una
-   modificación concurrente a ciegas.
-
-El puerto es:
-
-```text
-internal/ports/node_document_repository.go
-```
-
-Y el adaptador MongoDB es:
-
-```text
-internal/adapters/persistence/mongo_repository.go
-```
-
-El adaptador filtra la operación por `_id` y por:
-
-```text
-metadata.lamport_clock
-metadata.version_vector
-metadata.last_modified_by
-```
-
-Si esos valores cambiaron desde la lectura, MongoDB no actualiza el documento y
-el adaptador devuelve `ErrVersionConflict`.
-
-El dominio no contiene imports de MongoDB ni tags BSON. El mapeo entre
-`NodeID(1)` y `node_1` ocurre exclusivamente en el adaptador.
-
-El repositorio anterior de recursos individuales se conserva para compatibilidad
-con código legado, pero el flujo de documentos por nodo utiliza
-`MongoNodeDocumentRepository` y la colección `nodes`.
-
-## 14. Detección de capacidad física
-
-Los valores de `resources` no se configuran en `.env`. Al registrar el nodo,
-`RegisterNodeUseCase` utiliza `MachineCapacityReader` para leer la capacidad
-del host:
-
-```text
-internal/ports/machine_capacity.go
-internal/adapters/system/machine_capacity.go
-```
-
-La implementación actual obtiene:
-
-- `cpu_cores`: `runtime.NumCPU()`, es decir, las CPUs lógicas/vCPU visibles
-  para el proceso.
-- `memory_gb`: memoria física total. En Linux se lee `MemTotal` de
-  `/proc/meminfo`; en Windows se consulta `Win32_ComputerSystem` mediante
-  PowerShell.
-- `bandwidth_mbps`: máxima velocidad de enlace de las interfaces activas. En
-  Linux se lee `/sys/class/net/*/speed`; en Windows se consulta `Get-NetAdapter`.
-
-Si el sistema operativo no expone la velocidad de enlace, `bandwidth_mbps`
-queda en `0` y la aplicación continúa. La velocidad real de Internet o de
-Tailscale no puede inferirse siempre de forma fiable desde el host; la lectura
-corresponde a la capacidad de enlace que reporta la interfaz.
-
-La detección ocurre al iniciar el proceso y se registra mediante un upsert CAS
-en `DB_NODE_COLLECTION`:
-
-```text
-DB_NODE_COLLECTION=nodes
-```
-
-En los logs debe aparecer:
-
-```text
-machine capacity registered cpu_cores=... memory_gb=... bandwidth_mbps=...
-```
-
-Si el nodo ya tenía un documento, la capacidad detectada reemplaza los valores
-anteriores durante el registro. Para detectar cambios de CPU, RAM o interfaces
-de red se debe reiniciar el proceso. No se agregan `CPU_CORES`, `MEMORY_GB` ni
-`BANDWIDTH_MBPS` al `.env`.
-
-## 15. Registro de followers a través del coordinador
-
-El registro de capacidad respeta la exclusividad de escritura del coordinador.
-El follower obtiene CPU, memoria y bandwidth localmente, pero no persiste su
-documento directamente en MongoDB.
-
-```text
-Follower
-  │ mide capacidad
-  │ RegisterNode gRPC
-  ▼
-Coordinador
-  │ fusiona Lamport y vector del documento
-  │ incrementa su propia versión de escritura
-  ▼
-MongoDB: nodes/node_<id>
-```
-
-El RPC utilizado es:
-
-```protobuf
-rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
-```
-
-Si el proceso inicia antes de conocer al coordinador, el caso de uso reintenta
-periódicamente hasta recibir un anuncio `COORDINATOR`. Un proceso que es
-coordinador registra su propio documento localmente. Un follower solo solicita
-al coordinador que registre o actualice su documento.
-
-El vector es independiente por documento. Durante el registro de `node_2`, por
-ejemplo, el coordinador fusiona la metadata enviada por `node_2` con el vector
-actual del documento `node_2` y registra su propia escritura. No se copia un
-vector global a todos los documentos.
-
-## 16. Exclusividad de escritura del coordinador
-
-La exclusividad se aplica en dos niveles:
-
-1. Los casos de uso verifican `CoordinatorView.IsLocalCoordinator()` antes de
-   registrar nodos o actualizar recursos.
-2. `MongoNodeDocumentRepository.UpdateAtomic` también verifica esa condición
-   antes de ejecutar `ReplaceOne`. Por tanto, una llamada directa al repositorio
-   desde un follower devuelve `ErrNotCoordinator`.
-
-El repositorio legacy de recursos aplica la misma barrera en `Save`. La conexión
-MongoDB y las lecturas no están restringidas; la restricción se aplica a las
-operaciones de escritura.
-
-Esta protección representa la autoridad local observada por Bully. La
-prevención de dos coordinadores simultáneos durante una partición requiere
-fencing/quorum y queda fuera de esta etapa.
+El proyecto no tiene pruebas unitarias ni de integración todavía. `go test`
+compila los paquetes, pero no ejecuta casos.
+
+---
+
+## 12. Estado actual de los flujos
+
+| Flujo | Estado |
+|---|---|
+| Elección Bully y anuncio `COORDINATOR` | Implementado |
+| Heartbeat y reelección al caer el coordinador | Implementado |
+| Lectura de capacidad física | Implementado |
+| Registro del coordinador en MongoDB | Implementado |
+| Registro de followers vía `RegisterNode` | Implementado |
+| Reescritura de rol al cambiar de coordinador | Implementado |
+| Exclusividad de escritura (casos de uso y repositorio) | Implementado |
+| Vector y Lamport por documento | Implementado |
+| Resolución de conflictos de documentos | Implementado en dominio; no se invoca en ningún flujo |
+| Actualización de recursos por RPC | Caso de uso implementado; sin RPC de entrada |
+| Marcado `OFFLINE` de followers caídos (heartbeats pasivos al coordinador) | Implementado |
+| Detección de split-brain, quorum y fencing | No implementado |
+| Término (época) de elección | No implementado |
+| Reconexión automática a MongoDB | No implementado |
+| `writeConcern` explícito | No implementado |
+| Pruebas de integración con varios procesos | No implementado |
+| TLS / mTLS entre nodos | No implementado |
+
+---
+
+## 13. Limitaciones conocidas
+
+1. **Split-brain**: durante una partición, dos nodos pueden creerse
+   coordinadores y escribir. La barrera de escritura solo garantiza que el
+   nodo escriba si él cree ser coordinador. Falta término de elección, fencing
+   token y quorum.
+
+2. **Vector de followers**: el follower envía un vector construido en el
+   momento (su contador en 1, Lamport 1), no el vector guardado en su
+   documento. Por eso el contador del follower no refleja el número de cambios
+   de su documento. Corregirlo requiere que el follower lea su documento o que
+   el coordinador conserve el vector canónico.
+
+3. **Coordinador caído**: el nuevo coordinador marca `OFFLINE` y `FOLLOWER` al
+   antiguo cuando supera el umbral de heartbeats (sección 5.4). Mientras tanto,
+   su documento conserva `COORDINATOR` y `ONLINE`.
+
+4. **Detección de followers caídos**: el coordinador los detecta solo por
+   ausencia de heartbeats. Un follower aislado de la red pero vivo se marca
+   `OFFLINE` igual, y no hay confirmación independiente. El caso de partición
+   pertenece al punto 1.
+
+5. **Registro dentro de `AnnounceCoordinator`**: el follower registra su
+   documento antes de responder al anuncio. Esto acopla el tiempo de respuesta
+   del anuncio al tiempo de MongoDB y del coordinador.
+
+6. **Reintento de MongoDB**: la conexión se intenta una sola vez al arrancar.
+   Si la base no responde, el nodo no escribe hasta reiniciarse.
+
+7. **Sin RPC de inventario**: `UpdateNodeResourcesUseCase` existe, pero ningún
+   handler gRPC lo invoca. No hay forma remota de asignar recursos.
+
+8. **Resolución de conflictos sin uso**: `ResolveNodeDocumentConflict` y el
+   vector comparado no se usan para reconciliar documentos de distintos
+   coordinadores. Hoy el CAS evita la sobrescritura silenciosa, pero no
+   reconcilia.
+
+9. **Pruebas**: no hay pruebas unitarias ni de integración que cubran la
+   elección, el registro o el cambio de coordinador.
+
+10. **Recursos legados**: `resource.go`, `resource_repository.go` y
+    `mongodb/resource_repository.go` se conservan sin uso activo.
+
+11. **Seguridad**: gRPC usa transporte sin TLS. Está pensado para una red
+    privada como Tailscale.

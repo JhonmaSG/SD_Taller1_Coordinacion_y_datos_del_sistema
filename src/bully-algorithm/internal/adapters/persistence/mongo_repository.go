@@ -108,7 +108,8 @@ func (r *MongoNodeDocumentRepository) Get(ctx context.Context, nodeID model.Node
 }
 
 // UpdateAtomic reemplaza el documento solo si su metadata todavía coincide
-// con expected. El filtro incluye el vector completo para evitar lost updates.
+// con expected. El filtro compara Lamport, last_modified_by y cada contador del
+// vector, para evitar lost updates sin depender del orden de las claves.
 func (r *MongoNodeDocumentRepository) UpdateAtomic(
 	ctx context.Context,
 	nodeID model.NodeID,
@@ -131,8 +132,13 @@ func (r *MongoNodeDocumentRepository) UpdateAtomic(
 	filter := bson.M{"_id": nodeID.Key()}
 	if expected.UpdatedBy != 0 || expected.Lamport != 0 || len(expected.VersionVector) > 0 {
 		filter["metadata.lamport_clock"] = uint64(expected.Lamport)
-		filter["metadata.version_vector"] = versionVectorToBSON(expected.VersionVector)
 		filter["metadata.last_modified_by"] = expected.UpdatedBy.Key()
+		// Cada contador se compara por separado. Comparar el mapa completo como
+		// documento embebido depende del orden de sus claves, y el orden de un
+		// mapa de Go no es estable: el CAS fallaba aunque nadie hubiera escrito.
+		for nodeKey, counter := range expected.VersionVector {
+			filter["metadata.version_vector."+nodeKey] = counter
+		}
 	}
 
 	result, err := r.collection.ReplaceOne(ctx, filter, toBSON(next), options.Replace().SetUpsert(true))

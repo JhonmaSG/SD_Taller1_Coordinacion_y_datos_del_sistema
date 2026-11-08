@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"sync"
 	"time"
 
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/domain/model"
@@ -20,6 +22,11 @@ type RegisterNodeUseCase struct {
 	capacity    ports.MachineCapacityReader
 	transport   ports.NodeRegistrationTransport
 	clock       model.LamportClock
+
+	// La capacidad física se lee una vez por proceso. Run reintenta el registro
+	// periódicamente; sin esta caché se ejecutaría PowerShell en cada ciclo.
+	resourcesMu sync.Mutex
+	resources   *model.NodeResources
 }
 
 func NewRegisterNodeUseCase(
@@ -54,7 +61,7 @@ func (uc *RegisterNodeUseCase) Register(ctx context.Context) (model.NodeDocument
 	if err := local.Validate(); err != nil {
 		return model.NodeDocument{}, err
 	}
-	resources, err := uc.capacity.Read(ctx)
+	resources, err := uc.machineResources(ctx)
 	if err != nil {
 		return model.NodeDocument{}, fmt.Errorf("read machine capacity: %w", err)
 	}
@@ -62,6 +69,7 @@ func (uc *RegisterNodeUseCase) Register(ctx context.Context) (model.NodeDocument
 	if !uc.coordinator.IsLocalCoordinator() {
 		coordinator, ok := uc.coordinator.CurrentCoordinator()
 		if !ok || coordinator.SameIdentity(local) {
+			log.Printf("registration skipped: no remote coordinator (known=%t self=%t)", ok, ok && coordinator.SameIdentity(local))
 			return model.NodeDocument{}, nil
 		}
 		metadata := uc.registrationMetadata(local)
@@ -113,6 +121,7 @@ func (uc *RegisterNodeUseCase) registerLocal(
 			}
 			return model.NodeDocument{}, fmt.Errorf("register local node document: %w", err)
 		}
+		log.Printf("coordinator document persisted node=%d role=%s lamport=%d", next.ID, next.Role, next.Metadata.Lamport)
 		return next, nil
 	}
 
@@ -187,7 +196,7 @@ func (uc *RegisterNodeUseCase) RegisterRemote(
 
 // Run reintenta el registro del nodo cuando el coordinador aparece después
 // del follower. Un registro sin cambios no produce una escritura adicional.
-func (uc *RegisterNodeUseCase) Run(ctx context.Context, interval time.Duration) error {
+func (uc *RegisterNodeUseCase) Run(ctx context.Context, interval, attemptTimeout time.Duration) error {
 	if ctx == nil {
 		return errors.New("context must not be nil")
 	}
@@ -195,10 +204,13 @@ func (uc *RegisterNodeUseCase) Run(ctx context.Context, interval time.Duration) 
 		return errors.New("registration interval must be greater than zero")
 	}
 
-	if _, err := uc.Register(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		// La elección o el servidor del coordinador pueden estar arrancando.
-		// El siguiente tick reintentará sin detener el monitor.
+	// El primer intento puede fallar porque el coordinador todavía está
+	// arrancando. Los ciclos siguientes reintentan sin detener el monitor.
+	if attemptTimeout <= 0 {
+		return errors.New("registration attempt timeout must be greater than zero")
 	}
+
+	uc.registerOnce(ctx, attemptTimeout)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -207,11 +219,39 @@ func (uc *RegisterNodeUseCase) Run(ctx context.Context, interval time.Duration) 
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if _, err := uc.Register(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				continue
-			}
+			uc.registerOnce(ctx, attemptTimeout)
 		}
 	}
+}
+
+// registerOnce ejecuta un intento de registro y deja constancia de los errores.
+// El monitor no se detiene: el siguiente ciclo vuelve a intentarlo.
+func (uc *RegisterNodeUseCase) registerOnce(ctx context.Context, timeout time.Duration) {
+	// Cada intento tiene límite de tiempo: una llamada bloqueada no debe
+	// detener el bucle de sincronización.
+	attemptContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	if _, err := uc.Register(attemptContext); err != nil && ctx.Err() == nil {
+		log.Printf("node document sync failed, retrying: %v", err)
+	}
+}
+
+// machineResources devuelve la capacidad leída al primer registro del proceso.
+// Si la lectura falla, no se guarda nada y el siguiente ciclo la reintenta.
+func (uc *RegisterNodeUseCase) machineResources(ctx context.Context) (model.NodeResources, error) {
+	uc.resourcesMu.Lock()
+	defer uc.resourcesMu.Unlock()
+
+	if uc.resources != nil {
+		return *uc.resources, nil
+	}
+	resources, err := uc.capacity.Read(ctx)
+	if err != nil {
+		return model.NodeResources{}, err
+	}
+	uc.resources = &resources
+	return resources, nil
 }
 
 func (uc *RegisterNodeUseCase) registrationMetadata(local model.Node) model.Metadata {
@@ -286,4 +326,47 @@ func hasKnownKeys(vector model.VersionVector, nodeIDs []model.NodeID) bool {
 		}
 	}
 	return true
+}
+
+// MarkFollowerOffline marca como OFFLINE y FOLLOWER el documento de un follower
+// que dejó de enviar heartbeats. Solo el coordinador activo puede ejecutarlo y
+// usa el mismo reloj de Lamport que el resto de escrituras del proceso.
+func (uc *RegisterNodeUseCase) MarkFollowerOffline(ctx context.Context, nodeID model.NodeID) error {
+	if ctx == nil {
+		return errors.New("context must not be nil")
+	}
+	if !uc.coordinator.IsLocalCoordinator() {
+		return ErrNotCoordinator
+	}
+
+	local := uc.membership.LocalNode()
+	if nodeID == local.ID {
+		return errors.New("the coordinator does not mark itself offline")
+	}
+
+	current, err := uc.repository.Get(ctx, nodeID)
+	if err != nil {
+		if errors.Is(err, ports.ErrNodeDocumentNotFound) {
+			return nil
+		}
+		return fmt.Errorf("get follower document: %w", err)
+	}
+	if current.Status == model.StatusOffline && current.Role == model.RoleFollower {
+		return nil
+	}
+
+	next := current.Clone()
+	next.ID = nodeID
+	next.Status = model.StatusOffline
+	next.Role = model.RoleFollower
+	uc.observeAndTick(current.Metadata.Lamport)
+	next.Metadata.Lamport = uc.clock.Value()
+	next.Metadata.VersionVector = ensureKnownKeys(current.Metadata.VersionVector, uc.knownNodeIDs())
+	next.Metadata.VersionVector.Increment(local.ID)
+	next.Metadata.UpdatedBy = local.ID
+
+	if err := next.Validate(); err != nil {
+		return err
+	}
+	return uc.repository.UpdateAtomic(ctx, nodeID, current.Metadata, next)
 }
