@@ -737,3 +737,47 @@ El dominio no contiene imports de MongoDB ni tags BSON. El mapeo entre
 El repositorio anterior de recursos individuales se conserva para compatibilidad
 con código legado, pero el flujo de documentos por nodo utiliza
 `MongoNodeDocumentRepository` y la colección `nodes`.
+
+## 14. Detección de capacidad física
+
+Los valores de `resources` no se configuran en `.env`. Al registrar el nodo,
+`RegisterNodeUseCase` utiliza `MachineCapacityReader` para leer la capacidad
+del host:
+
+```text
+internal/ports/machine_capacity.go
+internal/adapters/system/machine_capacity.go
+```
+
+La implementación actual obtiene:
+
+- `cpu_cores`: `runtime.NumCPU()`, es decir, las CPUs lógicas/vCPU visibles
+  para el proceso.
+- `memory_gb`: memoria física total. En Linux se lee `MemTotal` de
+  `/proc/meminfo`; en Windows se consulta `Win32_ComputerSystem` mediante
+  PowerShell.
+- `bandwidth_mbps`: máxima velocidad de enlace de las interfaces activas. En
+  Linux se lee `/sys/class/net/*/speed`; en Windows se consulta `Get-NetAdapter`.
+
+Si el sistema operativo no expone la velocidad de enlace, `bandwidth_mbps`
+queda en `0` y la aplicación continúa. La velocidad real de Internet o de
+Tailscale no puede inferirse siempre de forma fiable desde el host; la lectura
+corresponde a la capacidad de enlace que reporta la interfaz.
+
+La detección ocurre al iniciar el proceso y se registra mediante un upsert CAS
+en `DB_NODE_COLLECTION`:
+
+```text
+DB_NODE_COLLECTION=nodes
+```
+
+En los logs debe aparecer:
+
+```text
+machine capacity registered cpu_cores=... memory_gb=... bandwidth_mbps=...
+```
+
+Si el nodo ya tenía un documento, la capacidad detectada reemplaza los valores
+anteriores durante el registro. Para detectar cambios de CPU, RAM o interfaces
+de red se debe reiniciar el proceso. No se agregan `CPU_CORES`, `MEMORY_GB` ni
+`BANDWIDTH_MBPS` al `.env`.

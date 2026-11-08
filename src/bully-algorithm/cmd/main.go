@@ -14,6 +14,7 @@ import (
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/adapters/config"
 	grpcadapter "github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/adapters/grpc"
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/adapters/persistence"
+	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/adapters/system"
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/domain/usecase"
 )
 
@@ -107,16 +108,22 @@ func run() error {
 	repository := initializeRepository(cfg)
 	if repository != nil {
 		defer closeRepository(repository)
-		registerNode, registerErr := usecase.NewRegisterNodeUseCase(membership, election, repository)
+		registerNode, registerErr := usecase.NewRegisterNodeUseCase(
+			membership,
+			election,
+			repository,
+			system.NewMachineCapacityReader(),
+		)
 		if registerErr != nil {
 			log.Printf("node registration unavailable: %v", registerErr)
 		} else {
 			registerContext, cancelRegister := context.WithTimeout(context.Background(), mongoStartupTimeout)
-			_, registerErr = registerNode.Register(registerContext)
+			doc, registerErr := registerNode.Register(registerContext)
 			cancelRegister()
 			if registerErr != nil {
 				log.Printf("node document registration failed: %v", registerErr)
 			} else {
+				log.Printf("machine capacity registered cpu_cores=%d memory_gb=%d bandwidth_mbps=%d", doc.Resources.CPUCores, doc.Resources.MemoryGB, doc.Resources.BandwidthMbps)
 				go func() {
 					if err := registerNode.Run(runtimeContext, cfg.HeartbeatInterval); err != nil && !errors.Is(err, context.Canceled) {
 						log.Printf("node document role monitor stopped: %v", err)

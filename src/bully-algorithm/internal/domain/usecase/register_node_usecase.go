@@ -16,14 +16,16 @@ type RegisterNodeUseCase struct {
 	membership  ports.MembershipPort
 	coordinator ports.CoordinatorView
 	repository  ports.NodeDocumentRepository
+	capacity    ports.MachineCapacityReader
 }
 
 func NewRegisterNodeUseCase(
 	membership ports.MembershipPort,
 	coordinator ports.CoordinatorView,
 	repository ports.NodeDocumentRepository,
+	capacity ports.MachineCapacityReader,
 ) (*RegisterNodeUseCase, error) {
-	if membership == nil || coordinator == nil || repository == nil {
+	if membership == nil || coordinator == nil || repository == nil || capacity == nil {
 		return nil, errors.New("register node use case dependencies must not be nil")
 	}
 
@@ -31,6 +33,7 @@ func NewRegisterNodeUseCase(
 		membership:  membership,
 		coordinator: coordinator,
 		repository:  repository,
+		capacity:    capacity,
 	}, nil
 }
 
@@ -44,6 +47,11 @@ func (uc *RegisterNodeUseCase) Register(ctx context.Context) (model.NodeDocument
 	local := uc.membership.LocalNode()
 	if err := local.Validate(); err != nil {
 		return model.NodeDocument{}, err
+	}
+
+	resources, err := uc.capacity.Read(ctx)
+	if err != nil {
+		return model.NodeDocument{}, fmt.Errorf("read machine capacity: %w", err)
 	}
 
 	for attempt := 0; attempt < 3; attempt++ {
@@ -60,6 +68,7 @@ func (uc *RegisterNodeUseCase) Register(ctx context.Context) (model.NodeDocument
 
 		next := current.Clone()
 		next.ID = local.ID
+		next.Resources = resources
 		next.Status = model.StatusOnline
 		if uc.coordinator.IsLocalCoordinator() {
 			next.Role = model.RoleCoordinator
