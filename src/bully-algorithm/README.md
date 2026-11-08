@@ -89,7 +89,7 @@ NODE_PORT=5000
 PEERS=2@100.x.x.2:5000,3@100.x.x.3:5000
 TIMEOUT_MS=3000
 HEARTBEAT_MS=1000
-DB_URI=mongodb://100.x.x.1:27017,100.x.x.2:27017,100.x.x.3:27017/?replicaSet=rs-grupo
+DB_URI=mongodb://100.x.x.1:27017,100.x.x.2:27017,100.x.x.3:27017/?replicaSet=rs-grupo&w=majority&wtimeoutMS=5000&retryWrites=true
 DB_NAME=inventory
 DB_NODE_COLLECTION=nodes
 ```
@@ -677,3 +677,17 @@ MongoDB write failed operation=node_and_cluster_update node=node_3 lamport=5 vec
 
 El vector se ordena al imprimirlo para que dos logs de la misma metadata sean
 comparables aunque los mapas de Go tengan distinto orden interno.
+
+### Write concern
+
+El repositorio configura explícitamente `writeconcern.Majority()` en el
+cliente MongoDB. La URI de ejemplo también incluye:
+
+```text
+w=majority&wtimeoutMS=5000&retryWrites=true
+```
+
+Una escritura solo se considera confirmada cuando la mayoría del Replica Set la
+acepta. Si el coordinador de la aplicación queda aislado junto con un miembro
+MongoDB y no puede alcanzar la mayoría, la transacción falla y no se incrementa
+la metadata global de forma efectiva.

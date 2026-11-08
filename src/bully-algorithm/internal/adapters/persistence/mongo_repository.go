@@ -12,6 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
 
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/domain/model"
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/ports"
@@ -56,7 +57,8 @@ func NewMongoNodeDocumentRepository(ctx context.Context, uri, databaseName, coll
 	if coordinator == nil {
 		return nil, errors.New("coordinator view must not be nil")
 	}
-	client, err := mongo.Connect(options.Client().ApplyURI(uri))
+	clientOptions := options.Client().ApplyURI(uri).SetWriteConcern(writeconcern.Majority())
+	client, err := mongo.Connect(clientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("connect to MongoDB: %w", err)
 	}
