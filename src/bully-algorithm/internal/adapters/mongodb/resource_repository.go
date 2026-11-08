@@ -10,14 +10,16 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/domain/model"
+	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/ports"
 )
 
 // ResourceRepository implementa la persistencia de recursos sobre MongoDB.
 // La conexión puede apuntar a un Replica Set mediante la URI, por ejemplo
 // mongodb://host/?replicaSet=rs-grupo.
 type ResourceRepository struct {
-	client     *mongo.Client
-	collection *mongo.Collection
+	client      *mongo.Client
+	collection  *mongo.Collection
+	coordinator ports.CoordinatorView
 }
 
 type resourceDocument struct {
@@ -40,6 +42,7 @@ func NewResourceRepository(
 	uri string,
 	databaseName string,
 	collectionName string,
+	coordinator ports.CoordinatorView,
 ) (*ResourceRepository, error) {
 	if ctx == nil {
 		return nil, errors.New("context must not be nil")
@@ -49,6 +52,9 @@ func NewResourceRepository(
 	}
 	if databaseName == "" || collectionName == "" {
 		return nil, errors.New("MongoDB database and collection must not be empty")
+	}
+	if coordinator == nil {
+		return nil, errors.New("coordinator view must not be nil")
 	}
 
 	client, err := mongo.Connect(options.Client().ApplyURI(uri))
@@ -61,8 +67,9 @@ func NewResourceRepository(
 	}
 
 	return &ResourceRepository{
-		client:     client,
-		collection: client.Database(databaseName).Collection(collectionName),
+		client:      client,
+		collection:  client.Database(databaseName).Collection(collectionName),
+		coordinator: coordinator,
 	}, nil
 }
 
@@ -100,6 +107,9 @@ func (r *ResourceRepository) FindByID(ctx context.Context, resourceID string) (m
 func (r *ResourceRepository) Save(ctx context.Context, resource model.Resource) error {
 	if r == nil || r.collection == nil {
 		return errors.New("MongoDB repository is not initialized")
+	}
+	if r.coordinator == nil || !r.coordinator.IsLocalCoordinator() {
+		return ports.ErrNotCoordinator
 	}
 	if err := resource.Validate(); err != nil {
 		return err

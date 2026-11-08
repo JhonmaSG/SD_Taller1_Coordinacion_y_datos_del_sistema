@@ -22,6 +22,7 @@ const (
 	ElectionService_RequestElection_FullMethodName     = "/election.v1.ElectionService/RequestElection"
 	ElectionService_AnnounceCoordinator_FullMethodName = "/election.v1.ElectionService/AnnounceCoordinator"
 	ElectionService_ProcessHeartbeat_FullMethodName    = "/election.v1.ElectionService/ProcessHeartbeat"
+	ElectionService_RegisterNode_FullMethodName        = "/election.v1.ElectionService/RegisterNode"
 )
 
 // ElectionServiceClient is the client API for ElectionService service.
@@ -33,6 +34,7 @@ type ElectionServiceClient interface {
 	RequestElection(ctx context.Context, in *RequestElectionRequest, opts ...grpc.CallOption) (*RequestElectionResponse, error)
 	AnnounceCoordinator(ctx context.Context, in *AnnounceCoordinatorRequest, opts ...grpc.CallOption) (*AnnounceCoordinatorResponse, error)
 	ProcessHeartbeat(ctx context.Context, in *ProcessHeartbeatRequest, opts ...grpc.CallOption) (*ProcessHeartbeatResponse, error)
+	RegisterNode(ctx context.Context, in *RegisterNodeRequest, opts ...grpc.CallOption) (*RegisterNodeResponse, error)
 }
 
 type electionServiceClient struct {
@@ -73,6 +75,16 @@ func (c *electionServiceClient) ProcessHeartbeat(ctx context.Context, in *Proces
 	return out, nil
 }
 
+func (c *electionServiceClient) RegisterNode(ctx context.Context, in *RegisterNodeRequest, opts ...grpc.CallOption) (*RegisterNodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegisterNodeResponse)
+	err := c.cc.Invoke(ctx, ElectionService_RegisterNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ElectionServiceServer is the server API for ElectionService service.
 // All implementations must embed UnimplementedElectionServiceServer
 // for forward compatibility.
@@ -82,6 +94,7 @@ type ElectionServiceServer interface {
 	RequestElection(context.Context, *RequestElectionRequest) (*RequestElectionResponse, error)
 	AnnounceCoordinator(context.Context, *AnnounceCoordinatorRequest) (*AnnounceCoordinatorResponse, error)
 	ProcessHeartbeat(context.Context, *ProcessHeartbeatRequest) (*ProcessHeartbeatResponse, error)
+	RegisterNode(context.Context, *RegisterNodeRequest) (*RegisterNodeResponse, error)
 	mustEmbedUnimplementedElectionServiceServer()
 }
 
@@ -100,6 +113,9 @@ func (UnimplementedElectionServiceServer) AnnounceCoordinator(context.Context, *
 }
 func (UnimplementedElectionServiceServer) ProcessHeartbeat(context.Context, *ProcessHeartbeatRequest) (*ProcessHeartbeatResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ProcessHeartbeat not implemented")
+}
+func (UnimplementedElectionServiceServer) RegisterNode(context.Context, *RegisterNodeRequest) (*RegisterNodeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RegisterNode not implemented")
 }
 func (UnimplementedElectionServiceServer) mustEmbedUnimplementedElectionServiceServer() {}
 func (UnimplementedElectionServiceServer) testEmbeddedByValue()                         {}
@@ -176,6 +192,24 @@ func _ElectionService_ProcessHeartbeat_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ElectionService_RegisterNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ElectionServiceServer).RegisterNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ElectionService_RegisterNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ElectionServiceServer).RegisterNode(ctx, req.(*RegisterNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ElectionService_ServiceDesc is the grpc.ServiceDesc for ElectionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -194,6 +228,10 @@ var ElectionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ProcessHeartbeat",
 			Handler:    _ElectionService_ProcessHeartbeat_Handler,
+		},
+		{
+			MethodName: "RegisterNode",
+			Handler:    _ElectionService_RegisterNode_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

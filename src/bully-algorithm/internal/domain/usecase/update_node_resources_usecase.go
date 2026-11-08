@@ -10,7 +10,7 @@ import (
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/ports"
 )
 
-var ErrNotCoordinator = errors.New("only the active coordinator can update resources")
+var ErrNotCoordinator = ports.ErrNotCoordinator
 
 // UpdateNodeResourcesCommand contiene el estado de recursos que se desea
 // aplicar al documento del nodo local.

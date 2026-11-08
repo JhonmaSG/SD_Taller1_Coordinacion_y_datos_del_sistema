@@ -781,3 +781,55 @@ Si el nodo ya tenía un documento, la capacidad detectada reemplaza los valores
 anteriores durante el registro. Para detectar cambios de CPU, RAM o interfaces
 de red se debe reiniciar el proceso. No se agregan `CPU_CORES`, `MEMORY_GB` ni
 `BANDWIDTH_MBPS` al `.env`.
+
+## 15. Registro de followers a través del coordinador
+
+El registro de capacidad respeta la exclusividad de escritura del coordinador.
+El follower obtiene CPU, memoria y bandwidth localmente, pero no persiste su
+documento directamente en MongoDB.
+
+```text
+Follower
+  │ mide capacidad
+  │ RegisterNode gRPC
+  ▼
+Coordinador
+  │ fusiona Lamport y vector del documento
+  │ incrementa su propia versión de escritura
+  ▼
+MongoDB: nodes/node_<id>
+```
+
+El RPC utilizado es:
+
+```protobuf
+rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+```
+
+Si el proceso inicia antes de conocer al coordinador, el caso de uso reintenta
+periódicamente hasta recibir un anuncio `COORDINATOR`. Un proceso que es
+coordinador registra su propio documento localmente. Un follower solo solicita
+al coordinador que registre o actualice su documento.
+
+El vector es independiente por documento. Durante el registro de `node_2`, por
+ejemplo, el coordinador fusiona la metadata enviada por `node_2` con el vector
+actual del documento `node_2` y registra su propia escritura. No se copia un
+vector global a todos los documentos.
+
+## 16. Exclusividad de escritura del coordinador
+
+La exclusividad se aplica en dos niveles:
+
+1. Los casos de uso verifican `CoordinatorView.IsLocalCoordinator()` antes de
+   registrar nodos o actualizar recursos.
+2. `MongoNodeDocumentRepository.UpdateAtomic` también verifica esa condición
+   antes de ejecutar `ReplaceOne`. Por tanto, una llamada directa al repositorio
+   desde un follower devuelve `ErrNotCoordinator`.
+
+El repositorio legacy de recursos aplica la misma barrera en `Save`. La conexión
+MongoDB y las lecturas no están restringidas; la restricción se aplica a las
+operaciones de escritura.
+
+Esta protección representa la autoridad local observada por Bully. La
+prevención de dos coordinadores simultáneos durante una partición requiere
+fencing/quorum y queda fuera de esta etapa.

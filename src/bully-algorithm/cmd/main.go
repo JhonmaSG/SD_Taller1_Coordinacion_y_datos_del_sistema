@@ -16,6 +16,7 @@ import (
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/adapters/persistence"
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/adapters/system"
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/domain/usecase"
+	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/ports"
 )
 
 const (
@@ -105,7 +106,7 @@ func run() error {
 	// MongoDB pertenece al plano de datos. Se intenta inicializar después de la
 	// elección y su indisponibilidad deja al nodo en modo degradado, sin impedir
 	// que participe en Bully o atienda mensajes de otros nodos.
-	repository := initializeRepository(cfg)
+	repository := initializeRepository(cfg, election)
 	if repository != nil {
 		defer closeRepository(repository)
 		registerNode, registerErr := usecase.NewRegisterNodeUseCase(
@@ -113,6 +114,7 @@ func run() error {
 			election,
 			repository,
 			system.NewMachineCapacityReader(),
+			transport,
 		)
 		if registerErr != nil {
 			log.Printf("node registration unavailable: %v", registerErr)
@@ -123,6 +125,7 @@ func run() error {
 			if registerErr != nil {
 				log.Printf("node document registration failed: %v", registerErr)
 			} else {
+				electionServer.SetRegistrationUseCase(registerNode)
 				log.Printf("machine capacity registered cpu_cores=%d memory_gb=%d bandwidth_mbps=%d", doc.Resources.CPUCores, doc.Resources.MemoryGB, doc.Resources.BandwidthMbps)
 				go func() {
 					if err := registerNode.Run(runtimeContext, cfg.HeartbeatInterval); err != nil && !errors.Is(err, context.Canceled) {
@@ -181,7 +184,7 @@ func startElection(election *usecase.BullyElectionUseCase, timeout time.Duration
 	return nil
 }
 
-func initializeRepository(cfg config.Config) *persistence.MongoNodeDocumentRepository {
+func initializeRepository(cfg config.Config, coordinator ports.CoordinatorView) *persistence.MongoNodeDocumentRepository {
 	mongoContext, cancelMongo := context.WithTimeout(context.Background(), mongoStartupTimeout)
 	defer cancelMongo()
 
@@ -190,6 +193,7 @@ func initializeRepository(cfg config.Config) *persistence.MongoNodeDocumentRepos
 		cfg.DatabaseURI,
 		cfg.DatabaseName,
 		cfg.NodeCollection,
+		coordinator,
 	)
 	if err != nil {
 		log.Printf(

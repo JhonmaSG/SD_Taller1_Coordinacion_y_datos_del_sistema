@@ -11,6 +11,7 @@ import (
 
 	electionpb "github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/election/v1"
 	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/domain/model"
+	"github.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/internal/ports"
 )
 
 // ElectionTransport es el adaptador de salida gRPC para el algoritmo Bully.
@@ -143,8 +144,83 @@ func fromProtoNode(node *electionpb.Node) (model.Node, error) {
 
 	return converted, nil
 }
+func (t *ElectionTransport) RegisterNode(
+	ctx context.Context,
+	sender model.Node,
+	coordinator model.Node,
+	resources model.NodeResources,
+	metadata model.Metadata,
+) (model.NodeDocument, error) {
+	if ctx == nil {
+		return model.NodeDocument{}, errors.New("context must not be nil")
+	}
+	if err := sender.Validate(); err != nil {
+		return model.NodeDocument{}, fmt.Errorf("invalid registration sender: %w", err)
+	}
+	if err := validatePeer(coordinator); err != nil {
+		return model.NodeDocument{}, err
+	}
 
-// SendHeartbeat implementa ports.ElectionTransportPort.
+	conn, err := t.dial(ctx, coordinator.Address)
+	if err != nil {
+		return model.NodeDocument{}, err
+	}
+	defer conn.Close()
+
+	response, err := electionpb.NewElectionServiceClient(conn).RegisterNode(ctx, &electionpb.RegisterNodeRequest{
+		Sender: toProtoNode(sender), Resources: toProtoResources(resources), Metadata: toProtoMetadata(metadata),
+	}, grpc.WaitForReady(true))
+	if err != nil {
+		return model.NodeDocument{}, err
+	}
+	if !response.GetAccepted() {
+		return model.NodeDocument{}, errors.New("node registration was rejected")
+	}
+
+	return fromProtoDocument(response.GetDocument())
+}
+
+func toProtoResources(resources model.NodeResources) *electionpb.NodeResources {
+	return &electionpb.NodeResources{CpuCores: resources.CPUCores, MemoryGb: resources.MemoryGB, BandwidthMbps: resources.BandwidthMbps}
+}
+
+func toProtoMetadata(metadata model.Metadata) *electionpb.NodeMetadata {
+	return &electionpb.NodeMetadata{LamportClock: uint64(metadata.Lamport), VersionVector: metadata.VersionVector, LastModifiedBy: metadata.UpdatedBy.Key()}
+}
+
+func fromProtoDocument(document *electionpb.NodeDocument) (model.NodeDocument, error) {
+	if document == nil || document.GetNode() == nil || document.GetMetadata() == nil {
+		return model.NodeDocument{}, errors.New("registration response document is incomplete")
+	}
+	node, err := fromProtoNode(document.GetNode())
+	if err != nil {
+		return model.NodeDocument{}, err
+	}
+	updatedBy, err := parseNodeKey(document.GetMetadata().GetLastModifiedBy())
+	if err != nil {
+		return model.NodeDocument{}, err
+	}
+	result := model.NodeDocument{ID: node.ID, Role: model.NodeRole(document.GetNodeRole()), Status: model.NodeStatus(document.GetStatus()), Resources: model.NodeResources{CPUCores: document.GetResources().GetCpuCores(), MemoryGB: document.GetResources().GetMemoryGb(), BandwidthMbps: document.GetResources().GetBandwidthMbps()}, Metadata: model.Metadata{Lamport: model.LamportTime(document.GetMetadata().GetLamportClock()), VersionVector: document.GetMetadata().GetVersionVector(), UpdatedBy: updatedBy}}
+	if err := result.Validate(); err != nil {
+		return model.NodeDocument{}, err
+	}
+	return result, nil
+}
+
+func parseNodeKey(value string) (model.NodeID, error) {
+	const prefix = "node_"
+	if len(value) <= len(prefix) || value[:len(prefix)] != prefix {
+		return 0, fmt.Errorf("invalid node key %q", value)
+	}
+	var id uint64
+	if _, err := fmt.Sscanf(value[len(prefix):], "%d", &id); err != nil || id == 0 {
+		return 0, fmt.Errorf("invalid node key %q", value)
+	}
+	return model.NodeID(id), nil
+}
+
+var _ ports.NodeRegistrationTransport = (*ElectionTransport)(nil)
+
 func (t *ElectionTransport) SendHeartbeat(
 	ctx context.Context,
 	from, coordinator model.Node,

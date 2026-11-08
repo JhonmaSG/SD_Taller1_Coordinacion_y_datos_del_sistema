@@ -353,6 +353,314 @@ func (x *ProcessHeartbeatResponse) GetAlive() bool {
 	return false
 }
 
+type NodeResources struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CpuCores      int64                  `protobuf:"varint,1,opt,name=cpu_cores,json=cpuCores,proto3" json:"cpu_cores,omitempty"`
+	MemoryGb      int64                  `protobuf:"varint,2,opt,name=memory_gb,json=memoryGb,proto3" json:"memory_gb,omitempty"`
+	BandwidthMbps int64                  `protobuf:"varint,3,opt,name=bandwidth_mbps,json=bandwidthMbps,proto3" json:"bandwidth_mbps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeResources) Reset() {
+	*x = NodeResources{}
+	mi := &file_election_v1_election_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeResources) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeResources) ProtoMessage() {}
+
+func (x *NodeResources) ProtoReflect() protoreflect.Message {
+	mi := &file_election_v1_election_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeResources.ProtoReflect.Descriptor instead.
+func (*NodeResources) Descriptor() ([]byte, []int) {
+	return file_election_v1_election_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *NodeResources) GetCpuCores() int64 {
+	if x != nil {
+		return x.CpuCores
+	}
+	return 0
+}
+
+func (x *NodeResources) GetMemoryGb() int64 {
+	if x != nil {
+		return x.MemoryGb
+	}
+	return 0
+}
+
+func (x *NodeResources) GetBandwidthMbps() int64 {
+	if x != nil {
+		return x.BandwidthMbps
+	}
+	return 0
+}
+
+type NodeMetadata struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	LamportClock   uint64                 `protobuf:"varint,1,opt,name=lamport_clock,json=lamportClock,proto3" json:"lamport_clock,omitempty"`
+	VersionVector  map[string]uint64      `protobuf:"bytes,2,rep,name=version_vector,json=versionVector,proto3" json:"version_vector,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	LastModifiedBy string                 `protobuf:"bytes,3,opt,name=last_modified_by,json=lastModifiedBy,proto3" json:"last_modified_by,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *NodeMetadata) Reset() {
+	*x = NodeMetadata{}
+	mi := &file_election_v1_election_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeMetadata) ProtoMessage() {}
+
+func (x *NodeMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_election_v1_election_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeMetadata.ProtoReflect.Descriptor instead.
+func (*NodeMetadata) Descriptor() ([]byte, []int) {
+	return file_election_v1_election_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *NodeMetadata) GetLamportClock() uint64 {
+	if x != nil {
+		return x.LamportClock
+	}
+	return 0
+}
+
+func (x *NodeMetadata) GetVersionVector() map[string]uint64 {
+	if x != nil {
+		return x.VersionVector
+	}
+	return nil
+}
+
+func (x *NodeMetadata) GetLastModifiedBy() string {
+	if x != nil {
+		return x.LastModifiedBy
+	}
+	return ""
+}
+
+type RegisterNodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sender        *Node                  `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
+	Resources     *NodeResources         `protobuf:"bytes,2,opt,name=resources,proto3" json:"resources,omitempty"`
+	Metadata      *NodeMetadata          `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterNodeRequest) Reset() {
+	*x = RegisterNodeRequest{}
+	mi := &file_election_v1_election_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterNodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterNodeRequest) ProtoMessage() {}
+
+func (x *RegisterNodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_election_v1_election_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterNodeRequest.ProtoReflect.Descriptor instead.
+func (*RegisterNodeRequest) Descriptor() ([]byte, []int) {
+	return file_election_v1_election_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RegisterNodeRequest) GetSender() *Node {
+	if x != nil {
+		return x.Sender
+	}
+	return nil
+}
+
+func (x *RegisterNodeRequest) GetResources() *NodeResources {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
+}
+
+func (x *RegisterNodeRequest) GetMetadata() *NodeMetadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type RegisterNodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Document      *NodeDocument          `protobuf:"bytes,2,opt,name=document,proto3" json:"document,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterNodeResponse) Reset() {
+	*x = RegisterNodeResponse{}
+	mi := &file_election_v1_election_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterNodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterNodeResponse) ProtoMessage() {}
+
+func (x *RegisterNodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_election_v1_election_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterNodeResponse.ProtoReflect.Descriptor instead.
+func (*RegisterNodeResponse) Descriptor() ([]byte, []int) {
+	return file_election_v1_election_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RegisterNodeResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *RegisterNodeResponse) GetDocument() *NodeDocument {
+	if x != nil {
+		return x.Document
+	}
+	return nil
+}
+
+type NodeDocument struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Node          *Node                  `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	NodeRole      string                 `protobuf:"bytes,2,opt,name=node_role,json=nodeRole,proto3" json:"node_role,omitempty"`
+	Resources     *NodeResources         `protobuf:"bytes,3,opt,name=resources,proto3" json:"resources,omitempty"`
+	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	Metadata      *NodeMetadata          `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeDocument) Reset() {
+	*x = NodeDocument{}
+	mi := &file_election_v1_election_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeDocument) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeDocument) ProtoMessage() {}
+
+func (x *NodeDocument) ProtoReflect() protoreflect.Message {
+	mi := &file_election_v1_election_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeDocument.ProtoReflect.Descriptor instead.
+func (*NodeDocument) Descriptor() ([]byte, []int) {
+	return file_election_v1_election_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *NodeDocument) GetNode() *Node {
+	if x != nil {
+		return x.Node
+	}
+	return nil
+}
+
+func (x *NodeDocument) GetNodeRole() string {
+	if x != nil {
+		return x.NodeRole
+	}
+	return ""
+}
+
+func (x *NodeDocument) GetResources() *NodeResources {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
+}
+
+func (x *NodeDocument) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *NodeDocument) GetMetadata() *NodeMetadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
 var File_election_v1_election_proto protoreflect.FileDescriptor
 
 const file_election_v1_election_proto_rawDesc = "" +
@@ -374,11 +682,36 @@ const file_election_v1_election_proto_rawDesc = "" +
 	"\x06sender\x18\x01 \x01(\v2\x11.election.v1.NodeR\x06sender\x123\n" +
 	"\vcoordinator\x18\x02 \x01(\v2\x11.election.v1.NodeR\vcoordinator\"0\n" +
 	"\x18ProcessHeartbeatResponse\x12\x14\n" +
-	"\x05alive\x18\x01 \x01(\bR\x05alive2\xba\x02\n" +
+	"\x05alive\x18\x01 \x01(\bR\x05alive\"p\n" +
+	"\rNodeResources\x12\x1b\n" +
+	"\tcpu_cores\x18\x01 \x01(\x03R\bcpuCores\x12\x1b\n" +
+	"\tmemory_gb\x18\x02 \x01(\x03R\bmemoryGb\x12%\n" +
+	"\x0ebandwidth_mbps\x18\x03 \x01(\x03R\rbandwidthMbps\"\xf4\x01\n" +
+	"\fNodeMetadata\x12#\n" +
+	"\rlamport_clock\x18\x01 \x01(\x04R\flamportClock\x12S\n" +
+	"\x0eversion_vector\x18\x02 \x03(\v2,.election.v1.NodeMetadata.VersionVectorEntryR\rversionVector\x12(\n" +
+	"\x10last_modified_by\x18\x03 \x01(\tR\x0elastModifiedBy\x1a@\n" +
+	"\x12VersionVectorEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xb1\x01\n" +
+	"\x13RegisterNodeRequest\x12)\n" +
+	"\x06sender\x18\x01 \x01(\v2\x11.election.v1.NodeR\x06sender\x128\n" +
+	"\tresources\x18\x02 \x01(\v2\x1a.election.v1.NodeResourcesR\tresources\x125\n" +
+	"\bmetadata\x18\x03 \x01(\v2\x19.election.v1.NodeMetadataR\bmetadata\"i\n" +
+	"\x14RegisterNodeResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\x125\n" +
+	"\bdocument\x18\x02 \x01(\v2\x19.election.v1.NodeDocumentR\bdocument\"\xdb\x01\n" +
+	"\fNodeDocument\x12%\n" +
+	"\x04node\x18\x01 \x01(\v2\x11.election.v1.NodeR\x04node\x12\x1b\n" +
+	"\tnode_role\x18\x02 \x01(\tR\bnodeRole\x128\n" +
+	"\tresources\x18\x03 \x01(\v2\x1a.election.v1.NodeResourcesR\tresources\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\x125\n" +
+	"\bmetadata\x18\x05 \x01(\v2\x19.election.v1.NodeMetadataR\bmetadata2\x8f\x03\n" +
 	"\x0fElectionService\x12\\\n" +
 	"\x0fRequestElection\x12#.election.v1.RequestElectionRequest\x1a$.election.v1.RequestElectionResponse\x12h\n" +
 	"\x13AnnounceCoordinator\x12'.election.v1.AnnounceCoordinatorRequest\x1a(.election.v1.AnnounceCoordinatorResponse\x12_\n" +
-	"\x10ProcessHeartbeat\x12$.election.v1.ProcessHeartbeatRequest\x1a%.election.v1.ProcessHeartbeatResponseBlZjgithub.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/election/v1;electionpbb\x06proto3"
+	"\x10ProcessHeartbeat\x12$.election.v1.ProcessHeartbeatRequest\x1a%.election.v1.ProcessHeartbeatResponse\x12S\n" +
+	"\fRegisterNode\x12 .election.v1.RegisterNodeRequest\x1a!.election.v1.RegisterNodeResponseBlZjgithub.com/JhonmaSG/SD_Taller1_Coordinacion_y_datos_del_sistema/src/bully-algorithm/election/v1;electionpbb\x06proto3"
 
 var (
 	file_election_v1_election_proto_rawDescOnce sync.Once
@@ -392,7 +725,7 @@ func file_election_v1_election_proto_rawDescGZIP() []byte {
 	return file_election_v1_election_proto_rawDescData
 }
 
-var file_election_v1_election_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_election_v1_election_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_election_v1_election_proto_goTypes = []any{
 	(*Node)(nil),                        // 0: election.v1.Node
 	(*RequestElectionRequest)(nil),      // 1: election.v1.RequestElectionRequest
@@ -401,24 +734,40 @@ var file_election_v1_election_proto_goTypes = []any{
 	(*AnnounceCoordinatorResponse)(nil), // 4: election.v1.AnnounceCoordinatorResponse
 	(*ProcessHeartbeatRequest)(nil),     // 5: election.v1.ProcessHeartbeatRequest
 	(*ProcessHeartbeatResponse)(nil),    // 6: election.v1.ProcessHeartbeatResponse
+	(*NodeResources)(nil),               // 7: election.v1.NodeResources
+	(*NodeMetadata)(nil),                // 8: election.v1.NodeMetadata
+	(*RegisterNodeRequest)(nil),         // 9: election.v1.RegisterNodeRequest
+	(*RegisterNodeResponse)(nil),        // 10: election.v1.RegisterNodeResponse
+	(*NodeDocument)(nil),                // 11: election.v1.NodeDocument
+	nil,                                 // 12: election.v1.NodeMetadata.VersionVectorEntry
 }
 var file_election_v1_election_proto_depIdxs = []int32{
-	0, // 0: election.v1.RequestElectionRequest.sender:type_name -> election.v1.Node
-	0, // 1: election.v1.AnnounceCoordinatorRequest.sender:type_name -> election.v1.Node
-	0, // 2: election.v1.AnnounceCoordinatorRequest.coordinator:type_name -> election.v1.Node
-	0, // 3: election.v1.ProcessHeartbeatRequest.sender:type_name -> election.v1.Node
-	0, // 4: election.v1.ProcessHeartbeatRequest.coordinator:type_name -> election.v1.Node
-	1, // 5: election.v1.ElectionService.RequestElection:input_type -> election.v1.RequestElectionRequest
-	3, // 6: election.v1.ElectionService.AnnounceCoordinator:input_type -> election.v1.AnnounceCoordinatorRequest
-	5, // 7: election.v1.ElectionService.ProcessHeartbeat:input_type -> election.v1.ProcessHeartbeatRequest
-	2, // 8: election.v1.ElectionService.RequestElection:output_type -> election.v1.RequestElectionResponse
-	4, // 9: election.v1.ElectionService.AnnounceCoordinator:output_type -> election.v1.AnnounceCoordinatorResponse
-	6, // 10: election.v1.ElectionService.ProcessHeartbeat:output_type -> election.v1.ProcessHeartbeatResponse
-	8, // [8:11] is the sub-list for method output_type
-	5, // [5:8] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	0,  // 0: election.v1.RequestElectionRequest.sender:type_name -> election.v1.Node
+	0,  // 1: election.v1.AnnounceCoordinatorRequest.sender:type_name -> election.v1.Node
+	0,  // 2: election.v1.AnnounceCoordinatorRequest.coordinator:type_name -> election.v1.Node
+	0,  // 3: election.v1.ProcessHeartbeatRequest.sender:type_name -> election.v1.Node
+	0,  // 4: election.v1.ProcessHeartbeatRequest.coordinator:type_name -> election.v1.Node
+	12, // 5: election.v1.NodeMetadata.version_vector:type_name -> election.v1.NodeMetadata.VersionVectorEntry
+	0,  // 6: election.v1.RegisterNodeRequest.sender:type_name -> election.v1.Node
+	7,  // 7: election.v1.RegisterNodeRequest.resources:type_name -> election.v1.NodeResources
+	8,  // 8: election.v1.RegisterNodeRequest.metadata:type_name -> election.v1.NodeMetadata
+	11, // 9: election.v1.RegisterNodeResponse.document:type_name -> election.v1.NodeDocument
+	0,  // 10: election.v1.NodeDocument.node:type_name -> election.v1.Node
+	7,  // 11: election.v1.NodeDocument.resources:type_name -> election.v1.NodeResources
+	8,  // 12: election.v1.NodeDocument.metadata:type_name -> election.v1.NodeMetadata
+	1,  // 13: election.v1.ElectionService.RequestElection:input_type -> election.v1.RequestElectionRequest
+	3,  // 14: election.v1.ElectionService.AnnounceCoordinator:input_type -> election.v1.AnnounceCoordinatorRequest
+	5,  // 15: election.v1.ElectionService.ProcessHeartbeat:input_type -> election.v1.ProcessHeartbeatRequest
+	9,  // 16: election.v1.ElectionService.RegisterNode:input_type -> election.v1.RegisterNodeRequest
+	2,  // 17: election.v1.ElectionService.RequestElection:output_type -> election.v1.RequestElectionResponse
+	4,  // 18: election.v1.ElectionService.AnnounceCoordinator:output_type -> election.v1.AnnounceCoordinatorResponse
+	6,  // 19: election.v1.ElectionService.ProcessHeartbeat:output_type -> election.v1.ProcessHeartbeatResponse
+	10, // 20: election.v1.ElectionService.RegisterNode:output_type -> election.v1.RegisterNodeResponse
+	17, // [17:21] is the sub-list for method output_type
+	13, // [13:17] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_election_v1_election_proto_init() }
@@ -432,7 +781,7 @@ func file_election_v1_election_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_election_v1_election_proto_rawDesc), len(file_election_v1_election_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

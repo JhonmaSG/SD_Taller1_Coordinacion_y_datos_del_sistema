@@ -10,6 +10,7 @@ import (
 var (
 	ErrNodeDocumentNotFound = errors.New("node document not found")
 	ErrVersionConflict      = errors.New("node document version conflict")
+	ErrNotCoordinator       = errors.New("only the active coordinator can write")
 )
 
 // NodeDocumentRepository abstrae lectura y actualización CAS de un documento

@@ -19,8 +19,9 @@ import (
 // replica ese documento entre los miembros del Replica Set; la aplicación no
 // escribe copias manualmente en cada servidor.
 type MongoNodeDocumentRepository struct {
-	client     *mongo.Client
-	collection *mongo.Collection
+	client      *mongo.Client
+	collection  *mongo.Collection
+	coordinator ports.CoordinatorView
 }
 
 type nodeDocumentBSON struct {
@@ -49,12 +50,16 @@ func NewMongoNodeDocumentRepository(
 	uri string,
 	databaseName string,
 	collectionName string,
+	coordinator ports.CoordinatorView,
 ) (*MongoNodeDocumentRepository, error) {
 	if ctx == nil {
 		return nil, errors.New("context must not be nil")
 	}
 	if uri == "" || databaseName == "" || collectionName == "" {
 		return nil, errors.New("MongoDB URI, database and collection must not be empty")
+	}
+	if coordinator == nil {
+		return nil, errors.New("coordinator view must not be nil")
 	}
 
 	client, err := mongo.Connect(options.Client().ApplyURI(uri))
@@ -67,8 +72,9 @@ func NewMongoNodeDocumentRepository(
 	}
 
 	return &MongoNodeDocumentRepository{
-		client:     client,
-		collection: client.Database(databaseName).Collection(collectionName),
+		client:      client,
+		collection:  client.Database(databaseName).Collection(collectionName),
+		coordinator: coordinator,
 	}, nil
 }
 
@@ -111,6 +117,9 @@ func (r *MongoNodeDocumentRepository) UpdateAtomic(
 ) error {
 	if r == nil || r.collection == nil {
 		return errors.New("MongoDB repository is not initialized")
+	}
+	if r.coordinator == nil || !r.coordinator.IsLocalCoordinator() {
+		return ports.ErrNotCoordinator
 	}
 	if next.ID != nodeID {
 		return errors.New("node document id does not match repository key")

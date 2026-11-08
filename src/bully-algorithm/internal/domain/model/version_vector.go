@@ -1,8 +1,7 @@
 package model
 
 // VersionVector relaciona la clave estable de cada nodo con el contador de
-// versiones que ha generado. La representación textual node_1/node_2 se
-// mantiene en el dominio para coincidir con el documento persistido.
+// versiones que ha generado para un documento específico.
 type VersionVector map[string]uint64
 
 // VersionRelation describe la relación parcial entre dos vectores.
@@ -14,6 +13,20 @@ const (
 	VersionAfter
 	VersionConcurrent
 )
+
+// NewVersionVector crea un vector explícito con todos los nodos conocidos en
+// cero. La ausencia de una clave también equivale a cero al comparar, pero
+// persistirlas hace visible la membresía del sistema.
+func NewVersionVector(nodeIDs []NodeID) VersionVector {
+	vector := make(VersionVector, len(nodeIDs))
+	for _, nodeID := range nodeIDs {
+		if nodeID != 0 {
+			vector[nodeID.Key()] = 0
+		}
+	}
+
+	return vector
+}
 
 // Clone devuelve una copia independiente del vector.
 func (v VersionVector) Clone() VersionVector {

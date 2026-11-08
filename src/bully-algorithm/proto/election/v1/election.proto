@@ -9,6 +9,7 @@ service ElectionService {
   rpc RequestElection(RequestElectionRequest) returns (RequestElectionResponse);
   rpc AnnounceCoordinator(AnnounceCoordinatorRequest) returns (AnnounceCoordinatorResponse);
   rpc ProcessHeartbeat(ProcessHeartbeatRequest) returns (ProcessHeartbeatResponse);
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
 }
 
 message Node {
@@ -40,4 +41,35 @@ message ProcessHeartbeatRequest {
 
 message ProcessHeartbeatResponse {
   bool alive = 1;
+}
+
+message NodeResources {
+  int64 cpu_cores = 1;
+  int64 memory_gb = 2;
+  int64 bandwidth_mbps = 3;
+}
+
+message NodeMetadata {
+  uint64 lamport_clock = 1;
+  map<string, uint64> version_vector = 2;
+  string last_modified_by = 3;
+}
+
+message RegisterNodeRequest {
+  Node sender = 1;
+  NodeResources resources = 2;
+  NodeMetadata metadata = 3;
+}
+
+message RegisterNodeResponse {
+  bool accepted = 1;
+  NodeDocument document = 2;
+}
+
+message NodeDocument {
+  Node node = 1;
+  string node_role = 2;
+  NodeResources resources = 3;
+  string status = 4;
+  NodeMetadata metadata = 5;
 }
