@@ -37,24 +37,8 @@ sudo ./scripts/particion/reconectar.sh
 - Base de datos: `docs/decisiones/ADR-002-base-de-datos.md`
 - Regla de conflictos: `docs/decisiones/ADR-003-regla-conflictos.md`
 
-## 7. Evidencias
-| Entregable | Ubicación |
-|---|---|
-| E2 Informe | `informe/` |
-| E3 Conectividad | `evidencias/E3_conectividad/` |
-| E4 Elección | `evidencias/E4_eleccion/` |
-| E5 Partición | `evidencias/E5_particion/` |
 
-## 8. Bibliotecas de terceros
+## 7. Bibliotecas de terceros
 | Biblioteca | Versión | Uso | Licencia |
 |---|---|---|---|
 | TODO | | | |
-
-## 9. Integrantes
-| Nombre | Rol | Usuario GitHub |
-|---|---|---|
-| | Infraestructura e integración | |
-| | Coordinador | |
-| | Inventario | |
-| | Conflictos | |
-| | Partición y resultados | |
