@@ -1,0 +1,132 @@
+===== FASE ANTES - NODO 2 =====
+2026-11-11T03:05:50+00:00
+node2
+===== PUERTOS =====
+LISTEN 0      4096                            100.124.47.95:5002       0.0.0.0:*    users:(("bully-node",pid=1729,fd=3))                  
+===== IPTABLES =====
+-P INPUT ACCEPT
+-P FORWARD ACCEPT
+-P OUTPUT ACCEPT
+-N ts-forward
+-N ts-input
+-A INPUT -j ts-input
+-A FORWARD -j ts-forward
+-A ts-forward -i tailscale0 -j MARK --set-xmark 0x40000/0xff0000
+-A ts-forward -m mark --mark 0x40000/0xff0000 -j ACCEPT
+-A ts-forward -s 100.64.0.0/10 -o tailscale0 -j DROP
+-A ts-forward -o tailscale0 -j ACCEPT
+-A ts-input -s 100.124.47.95/32 -i lo -j ACCEPT
+-A ts-input -i tailscale0 -j ACCEPT
+-A ts-input -p udp -m udp --dport 41641 -j ACCEPT
+-A ts-input -s 100.115.92.0/23 ! -i tailscale0 -j RETURN
+-A ts-input -s 100.64.0.0/10 ! -i tailscale0 -j DROP
+===== ESTADO MONGODB =====
+[
+  {
+    host: '100.88.34.28:27017',
+    state: 'PRIMARY',
+    health: 1,
+    self: false
+  },
+  {
+    host: '100.110.214.118:27017',
+    state: 'SECONDARY',
+    health: 1,
+    self: false
+  },
+  {
+    host: '100.124.47.95:27017',
+    state: 'SECONDARY',
+    health: 1,
+    self: true
+  }
+]
+===== HELLO =====
+{
+  topologyVersion: {
+    processId: ObjectId('6af3db3fa6114842aa17fd50'),
+    counter: Long('5')
+  },
+  hosts: [
+    '100.88.34.28:27017',
+    '100.110.214.118:27017',
+    '100.124.47.95:27017'
+  ],
+  setName: 'rs-grupo',
+  setVersion: 2,
+  isWritablePrimary: false,
+  secondary: true,
+  primary: '100.88.34.28:27017',
+  me: '100.124.47.95:27017',
+  lastWrite: {
+    opTime: { ts: Timestamp({ t: 1794366354, i: 1 }), t: Long('29') },
+    lastWriteDate: ISODate('2026-11-11T03:05:54.000Z'),
+    majorityOpTime: { ts: Timestamp({ t: 1794366354, i: 1 }), t: Long('29') },
+    majorityWriteDate: ISODate('2026-11-11T03:05:54.000Z')
+  },
+  maxBsonObjectSize: 16777216,
+  maxMessageSizeBytes: 48000000,
+  maxWriteBatchSize: 100000,
+  localTime: ISODate('2026-11-11T03:05:57.414Z'),
+  logicalSessionTimeoutMinutes: 30,
+  connectionId: 39,
+  minWireVersion: 0,
+  maxWireVersion: 29,
+  readOnly: false,
+  ok: 1,
+  '$clusterTime': {
+    clusterTime: Timestamp({ t: 1794366354, i: 1 }),
+    signature: {
+      hash: Binary.createFromBase64('AAAAAAAAAAAAAAAAAAAAAAAAAAA=', 0),
+      keyId: Long('0')
+    }
+  },
+  operationTime: Timestamp({ t: 1794366354, i: 1 })
+}
+===== INVENTARIO =====
+{
+  _id: 'cluster_metadata'
+}
+{
+  _id: 'e5-medicion-20261108-nodo1'
+}
+{
+  _id: 'e5-medicion-20261108-nodo2'
+}
+{
+  _id: 'node_1',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_2',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_3',
+  node_role: 'COORDINATOR',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('2'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+===== LOG DE APLICACION =====
+2026/11/11 03:05:00.578546 gRPC server listening on 100.124.47.95:5002
+2026/11/11 03:05:00.994370 election state=waiting_for_coordinator higher_priority=1 acknowledgements=1
+2026/11/11 03:05:00.997626 node 2 started with 2 peer(s), MongoDB database=inventory collection=resources heartbeat=1s
+2026/11/11 03:05:01.262879 COORDINATOR received sender=3 coordinator=3 state=following
+2026/11/11 03:05:01.752350 MongoDB connection ready for inventory.resources
+2026/11/11 03:05:02.330848 machine capacity registered cpu_cores=1 memory_gb=1 bandwidth_mbps=1000

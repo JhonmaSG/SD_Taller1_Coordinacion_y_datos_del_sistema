@@ -1,0 +1,129 @@
+===== FASE DURANTE - NODO 3 =====
+2026-11-11T03:15:43+00:00
+node3
+===== IPTABLES PARTITION =====
+===== ESTADO MONGODB =====
+[
+  {
+    host: '100.88.34.28:27017',
+    state: 'PRIMARY',
+    health: 1,
+    self: true,
+    syncSource: '',
+    lastHeartbeatMessage: ''
+  },
+  {
+    host: '100.110.214.118:27017',
+    state: 'SECONDARY',
+    health: 1,
+    self: false,
+    syncSource: '100.124.47.95:27017',
+    lastHeartbeatMessage: ''
+  },
+  {
+    host: '100.124.47.95:27017',
+    state: 'SECONDARY',
+    health: 1,
+    self: false,
+    syncSource: '100.88.34.28:27017',
+    lastHeartbeatMessage: ''
+  }
+]
+===== HELLO =====
+{
+  topologyVersion: {
+    processId: ObjectId('6af3db427ede2fd0eccd96f1'),
+    counter: Long('16')
+  },
+  hosts: [
+    '100.88.34.28:27017',
+    '100.110.214.118:27017',
+    '100.124.47.95:27017'
+  ],
+  setName: 'rs-grupo',
+  setVersion: 2,
+  isWritablePrimary: true,
+  secondary: false,
+  primary: '100.88.34.28:27017',
+  me: '100.88.34.28:27017',
+  electionId: ObjectId('7fffffff0000000000000021'),
+  lastWrite: {
+    opTime: { ts: Timestamp({ t: 1794366945, i: 1 }), t: Long('33') },
+    lastWriteDate: ISODate('2026-11-11T03:15:45.000Z'),
+    majorityOpTime: { ts: Timestamp({ t: 1794366945, i: 1 }), t: Long('33') },
+    majorityWriteDate: ISODate('2026-11-11T03:15:45.000Z')
+  },
+  maxBsonObjectSize: 16777216,
+  maxMessageSizeBytes: 48000000,
+  maxWriteBatchSize: 100000,
+  localTime: ISODate('2026-11-11T03:15:46.240Z'),
+  logicalSessionTimeoutMinutes: 30,
+  connectionId: 151,
+  minWireVersion: 0,
+  maxWireVersion: 29,
+  readOnly: false,
+  ok: 1,
+  '$clusterTime': {
+    clusterTime: Timestamp({ t: 1794366945, i: 1 }),
+    signature: {
+      hash: Binary.createFromBase64('AAAAAAAAAAAAAAAAAAAAAAAAAAA=', 0),
+      keyId: Long('0')
+    }
+  },
+  operationTime: Timestamp({ t: 1794366945, i: 1 })
+}
+===== INVENTARIO =====
+{
+  _id: 'cluster_metadata'
+}
+{
+  _id: 'e5-medicion-20261108-nodo1'
+}
+{
+  _id: 'e5-medicion-20261108-nodo2'
+}
+{
+  _id: 'e5-particion-01-nodo2'
+}
+{
+  _id: 'node_1',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_2',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_3',
+  node_role: 'COORDINATOR',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('2'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+===== LOG DE APLICACION =====
+2026/11/11 03:14:05.276026 gRPC server listening on 100.88.34.28:5003
+2026/11/11 03:14:05.952995 COORDINATOR sent sender=3 coordinator=3 target=1 address=100.110.214.118:5001
+2026/11/11 03:14:06.125165 COORDINATOR sent sender=3 coordinator=3 target=2 address=100.124.47.95:5002
+2026/11/11 03:14:06.125408 election state=coordinator coordinator=3 address=100.88.34.28:5003 announcement_failures=[]
+2026/11/11 03:14:06.125441 node 3 started with 2 peer(s), MongoDB database=inventory collection=resources heartbeat=1s
+2026/11/11 03:14:06.134930 MongoDB connection ready for inventory.resources
+2026/11/11 03:14:06.135555 MongoDB write planned operation=cluster_metadata_update lamport=2453 vector={node_1:113, node_2:1202, node_3:1138} active_coordinator=node_3 last_modified_by=node_3
+2026/11/11 03:14:06.291162 MongoDB write committed operation=cluster_metadata_update lamport=2453 vector={node_1:113, node_2:1202, node_3:1138} active_coordinator=node_3
+2026/11/11 03:14:06.301404 machine capacity registered cpu_cores=1 memory_gb=2 bandwidth_mbps=1000
+2026/11/11 03:14:07.080999 MongoDB write planned operation=node_and_cluster_update node=node_2 role=AGENT status=ONLINE lamport=2454 vector={node_1:113, node_2:1202, node_3:1139} active_coordinator=node_3
+2026/11/11 03:14:07.249788 MongoDB write committed operation=node_and_cluster_update node=node_2 role=AGENT status=ONLINE lamport=2454 vector={node_1:113, node_2:1202, node_3:1139} active_coordinator=node_3

@@ -1,7 +1,0 @@
-2026/11/08 17:07:40.785901 gRPC server listening on 100.88.34.28:5003
-2026/11/08 17:07:41.153173 COORDINATOR sent sender=3 coordinator=3 target=2 address=100.124.47.95:5002
-2026/11/08 17:07:41.158677 COORDINATOR sent sender=3 coordinator=3 target=1 address=100.110.214.118:5001
-2026/11/08 17:07:41.158990 election state=coordinator coordinator=3 address=100.88.34.28:5003 announcement_failures=[]
-2026/11/08 17:07:41.181549 MongoDB connection ready for inventory.resources
-2026/11/08 17:07:41.313585 machine capacity registered cpu_cores=1 memory_gb=2 bandwidth_mbps=1000
-2026/11/08 17:07:41.313920 node 3 started with 2 peer(s), MongoDB database=inventory collection=resources heartbeat=1s

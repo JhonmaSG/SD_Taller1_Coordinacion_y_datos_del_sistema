@@ -1,0 +1,146 @@
+===== FASE ANTES - NODO 3 =====
+2026-11-11T03:05:59+00:00
+node3
+===== PUERTOS =====
+LISTEN 0      4096                             100.88.34.28:5003       0.0.0.0:*    users:(("bully-node",pid=1756,fd=3))                  
+===== IPTABLES =====
+-P INPUT ACCEPT
+-P FORWARD ACCEPT
+-P OUTPUT ACCEPT
+-N ts-forward
+-N ts-input
+-A INPUT -j ts-input
+-A FORWARD -j ts-forward
+-A ts-forward -i tailscale0 -j MARK --set-xmark 0x40000/0xff0000
+-A ts-forward -m mark --mark 0x40000/0xff0000 -j ACCEPT
+-A ts-forward -s 100.64.0.0/10 -o tailscale0 -j DROP
+-A ts-forward -o tailscale0 -j ACCEPT
+-A ts-input -s 100.88.34.28/32 -i lo -j ACCEPT
+-A ts-input -i tailscale0 -j ACCEPT
+-A ts-input -p udp -m udp --dport 41641 -j ACCEPT
+-A ts-input -s 100.115.92.0/23 ! -i tailscale0 -j RETURN
+-A ts-input -s 100.64.0.0/10 ! -i tailscale0 -j DROP
+===== ESTADO MONGODB =====
+[
+  {
+    host: '100.88.34.28:27017',
+    state: 'PRIMARY',
+    health: 1,
+    self: true
+  },
+  {
+    host: '100.110.214.118:27017',
+    state: 'SECONDARY',
+    health: 1,
+    self: false
+  },
+  {
+    host: '100.124.47.95:27017',
+    state: 'SECONDARY',
+    health: 1,
+    self: false
+  }
+]
+===== HELLO =====
+{
+  topologyVersion: {
+    processId: ObjectId('6af3db427ede2fd0eccd96f1'),
+    counter: Long('7')
+  },
+  hosts: [
+    '100.88.34.28:27017',
+    '100.110.214.118:27017',
+    '100.124.47.95:27017'
+  ],
+  setName: 'rs-grupo',
+  setVersion: 2,
+  isWritablePrimary: true,
+  secondary: false,
+  primary: '100.88.34.28:27017',
+  me: '100.88.34.28:27017',
+  electionId: ObjectId('7fffffff000000000000001d'),
+  lastWrite: {
+    opTime: { ts: Timestamp({ t: 1794366364, i: 1 }), t: Long('29') },
+    lastWriteDate: ISODate('2026-11-11T03:06:04.000Z'),
+    majorityOpTime: { ts: Timestamp({ t: 1794366364, i: 1 }), t: Long('29') },
+    majorityWriteDate: ISODate('2026-11-11T03:06:04.000Z')
+  },
+  maxBsonObjectSize: 16777216,
+  maxMessageSizeBytes: 48000000,
+  maxWriteBatchSize: 100000,
+  localTime: ISODate('2026-11-11T03:06:05.979Z'),
+  logicalSessionTimeoutMinutes: 30,
+  connectionId: 47,
+  minWireVersion: 0,
+  maxWireVersion: 29,
+  readOnly: false,
+  ok: 1,
+  '$clusterTime': {
+    clusterTime: Timestamp({ t: 1794366364, i: 1 }),
+    signature: {
+      hash: Binary.createFromBase64('AAAAAAAAAAAAAAAAAAAAAAAAAAA=', 0),
+      keyId: Long('0')
+    }
+  },
+  operationTime: Timestamp({ t: 1794366364, i: 1 })
+}
+===== INVENTARIO =====
+{
+  _id: 'cluster_metadata'
+}
+{
+  _id: 'e5-medicion-20261108-nodo1'
+}
+{
+  _id: 'e5-medicion-20261108-nodo2'
+}
+{
+  _id: 'node_1',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_2',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_3',
+  node_role: 'COORDINATOR',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('2'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+===== LOG DE APLICACION =====
+2026/11/11 03:04:51.830426 gRPC server listening on 100.88.34.28:5003
+2026/11/11 03:04:54.830306 election state=coordinator coordinator=3 address=100.88.34.28:5003 announcement_failures=[1 2]
+2026/11/11 03:04:54.830347 node 3 started with 2 peer(s), MongoDB database=inventory collection=resources heartbeat=1s
+2026/11/11 03:04:54.838998 COORDINATOR failed sender=3 coordinator=3 target=2 address=100.124.47.95:5002 phase=dial error=context deadline exceeded
+2026/11/11 03:04:54.839189 COORDINATOR failed sender=3 coordinator=3 target=1 address=100.110.214.118:5001 phase=dial error=context deadline exceeded
+2026/11/11 03:04:54.848720 MongoDB connection ready for inventory.resources
+2026/11/11 03:04:54.867827 machine capacity registered cpu_cores=1 memory_gb=2 bandwidth_mbps=1000
+2026/11/11 03:04:56.426696 COORDINATOR sent sender=3 coordinator=3 target=1 address=100.110.214.118:5001
+2026/11/11 03:04:58.872530 MongoDB write planned operation=node_and_cluster_update node=node_1 role=AGENT status=OFFLINE lamport=2367 vector={node_1:113, node_2:1159, node_3:1095} active_coordinator=node_3
+2026/11/11 03:04:59.013718 MongoDB write committed operation=node_and_cluster_update node=node_1 role=AGENT status=OFFLINE lamport=2367 vector={node_1:113, node_2:1159, node_3:1095} active_coordinator=node_3
+2026/11/11 03:04:59.097005 COORDINATOR failed sender=3 coordinator=3 target=2 address=100.124.47.95:5002 phase=dial error=context deadline exceeded
+2026/11/11 03:04:59.120135 MongoDB write planned operation=node_and_cluster_update node=node_2 role=AGENT status=OFFLINE lamport=2368 vector={node_1:113, node_2:1159, node_3:1096} active_coordinator=node_3
+2026/11/11 03:04:59.267146 MongoDB write committed operation=node_and_cluster_update node=node_2 role=AGENT status=OFFLINE lamport=2368 vector={node_1:113, node_2:1159, node_3:1096} active_coordinator=node_3
+2026/11/11 03:04:59.772263 MongoDB write planned operation=node_and_cluster_update node=node_1 role=AGENT status=ONLINE lamport=2369 vector={node_1:113, node_2:1159, node_3:1097} active_coordinator=node_3
+2026/11/11 03:04:59.929319 MongoDB write committed operation=node_and_cluster_update node=node_1 role=AGENT status=ONLINE lamport=2369 vector={node_1:113, node_2:1159, node_3:1097} active_coordinator=node_3
+2026/11/11 03:05:01.313015 COORDINATOR sent sender=3 coordinator=3 target=2 address=100.124.47.95:5002
+2026/11/11 03:05:01.582179 COORDINATOR sent sender=3 coordinator=3 target=1 address=100.110.214.118:5001
+2026/11/11 03:05:02.108362 MongoDB write planned operation=node_and_cluster_update node=node_2 role=AGENT status=ONLINE lamport=2370 vector={node_1:113, node_2:1159, node_3:1098} active_coordinator=node_3
+2026/11/11 03:05:02.236122 MongoDB write committed operation=node_and_cluster_update node=node_2 role=AGENT status=ONLINE lamport=2370 vector={node_1:113, node_2:1159, node_3:1098} active_coordinator=node_3

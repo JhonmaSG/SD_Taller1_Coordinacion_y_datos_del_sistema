@@ -1,0 +1,144 @@
+===== FASE DURANTE - NODO 2 =====
+2026-11-11T03:09:21+00:00
+node2
+===== IPTABLES PARTITION =====
+===== ESTADO MONGODB =====
+[
+  {
+    host: '100.88.34.28:27017',
+    state: '(not reachable/healthy)',
+    health: 0,
+    self: false,
+    syncSource: '',
+    lastHeartbeatMessage: "Couldn't get a connection within the time limit"
+  },
+  {
+    host: '100.110.214.118:27017',
+    state: 'SECONDARY',
+    health: 1,
+    self: false,
+    syncSource: '100.124.47.95:27017',
+    lastHeartbeatMessage: ''
+  },
+  {
+    host: '100.124.47.95:27017',
+    state: 'PRIMARY',
+    health: 1,
+    self: true,
+    syncSource: '',
+    lastHeartbeatMessage: ''
+  }
+]
+===== HELLO =====
+{
+  topologyVersion: {
+    processId: ObjectId('6af3db3fa6114842aa17fd50'),
+    counter: Long('8')
+  },
+  hosts: [
+    '100.88.34.28:27017',
+    '100.110.214.118:27017',
+    '100.124.47.95:27017'
+  ],
+  setName: 'rs-grupo',
+  setVersion: 2,
+  isWritablePrimary: true,
+  secondary: false,
+  primary: '100.124.47.95:27017',
+  me: '100.124.47.95:27017',
+  electionId: ObjectId('7fffffff000000000000001e'),
+  lastWrite: {
+    opTime: { ts: Timestamp({ t: 1794366556, i: 1 }), t: Long('30') },
+    lastWriteDate: ISODate('2026-11-11T03:09:16.000Z'),
+    majorityOpTime: { ts: Timestamp({ t: 1794366556, i: 1 }), t: Long('30') },
+    majorityWriteDate: ISODate('2026-11-11T03:09:16.000Z')
+  },
+  maxBsonObjectSize: 16777216,
+  maxMessageSizeBytes: 48000000,
+  maxWriteBatchSize: 100000,
+  localTime: ISODate('2026-11-11T03:09:22.723Z'),
+  logicalSessionTimeoutMinutes: 30,
+  connectionId: 63,
+  minWireVersion: 0,
+  maxWireVersion: 29,
+  readOnly: false,
+  ok: 1,
+  '$clusterTime': {
+    clusterTime: Timestamp({ t: 1794366556, i: 1 }),
+    signature: {
+      hash: Binary.createFromBase64('AAAAAAAAAAAAAAAAAAAAAAAAAAA=', 0),
+      keyId: Long('0')
+    }
+  },
+  operationTime: Timestamp({ t: 1794366556, i: 1 })
+}
+===== INVENTARIO =====
+{
+  _id: 'cluster_metadata'
+}
+{
+  _id: 'e5-medicion-20261108-nodo1'
+}
+{
+  _id: 'e5-medicion-20261108-nodo2'
+}
+{
+  _id: 'node_1',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_2',
+  node_role: 'COORDINATOR',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_3',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('2'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'OFFLINE'
+}
+===== LOG DE APLICACION =====
+2026/11/11 03:05:00.578546 gRPC server listening on 100.124.47.95:5002
+2026/11/11 03:05:00.994370 election state=waiting_for_coordinator higher_priority=1 acknowledgements=1
+2026/11/11 03:05:00.997626 node 2 started with 2 peer(s), MongoDB database=inventory collection=resources heartbeat=1s
+2026/11/11 03:05:01.262879 COORDINATOR received sender=3 coordinator=3 state=following
+2026/11/11 03:05:01.752350 MongoDB connection ready for inventory.resources
+2026/11/11 03:05:02.330848 machine capacity registered cpu_cores=1 memory_gb=1 bandwidth_mbps=1000
+2026/11/11 03:07:17.002147 heartbeat failed coordinator=3 error=heartbeat RPC to node 3: rpc error: code = DeadlineExceeded desc = context deadline exceeded, starting re-election
+2026/11/11 03:07:17.754747 node document sync failed, retrying: context deadline exceeded
+2026/11/11 03:07:23.015051 COORDINATOR failed sender=2 coordinator=2 target=1 address=100.110.214.118:5001 phase=rpc error=rpc error: code = DeadlineExceeded desc = context deadline exceeded
+2026/11/11 03:07:23.015219 heartbeat-triggered election state=coordinator coordinator=2 announcement_failures=[1 3]
+2026/11/11 03:07:23.015396 COORDINATOR failed sender=2 coordinator=2 target=3 address=100.88.34.28:5003 phase=dial error=context deadline exceeded
+2026/11/11 03:07:23.755256 node document sync failed, retrying: get node document node_2: timed out while checking out a connection from connection pool: context deadline exceeded; total connections: 3, maxPoolSize: 100, idle connections: 0, wait duration: 3.002004811s
+2026/11/11 03:07:26.346460 follower liveness sweep: mark node 1 offline: get node document node_1: timed out while checking out a connection from connection pool: context deadline exceeded; total connections: 3, maxPoolSize: 100, idle connections: 0, wait duration: 3.00136786s
+mark node 3 offline: get node document node_3: timed out while checking out a connection from connection pool: context deadline exceeded; total connections: 0, maxPoolSize: 100, idle connections: 0, wait duration: 1.752µs
+2026/11/11 03:07:26.350401 MongoDB write planned operation=node_and_cluster_update node=node_1 role=AGENT status=OFFLINE lamport=2371 vector={node_1:113, node_2:1160, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:26.756996 node document sync failed, retrying: get node document node_2: timed out while checking out a connection from connection pool: context deadline exceeded; total connections: 3, maxPoolSize: 100, idle connections: 0, wait duration: 3.001579375s
+2026/11/11 03:07:26.762548 MongoDB write planned operation=node_and_cluster_update node=node_2 role=COORDINATOR status=ONLINE lamport=2371 vector={node_1:113, node_2:1160, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:27.733673 MongoDB write planned operation=node_and_cluster_update node=node_1 role=AGENT status=ONLINE lamport=2372 vector={node_1:113, node_2:1161, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:32.906787 MongoDB write committed operation=node_and_cluster_update node=node_1 role=AGENT status=OFFLINE lamport=2371 vector={node_1:113, node_2:1160, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:32.907033 follower liveness sweep: mark node 3 offline: get node document node_3: calculated server-side timeout (0 ms) is less than or equal to 0 (network round-trip time stats: moving avg: 1.293088ms, min: 195.63µs, moving stddev: 1.188482ms): operation not sent to server, as Timeout would be exceeded: context deadline exceeded
+2026/11/11 03:07:32.907368 MongoDB write committed operation=node_and_cluster_update node=node_1 role=AGENT status=ONLINE lamport=2372 vector={node_1:113, node_2:1161, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:32.907674 MongoDB write committed operation=node_and_cluster_update node=node_2 role=COORDINATOR status=ONLINE lamport=2371 vector={node_1:113, node_2:1160, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:32.907724 coordinator document persisted node=2 role=COORDINATOR
+2026/11/11 03:07:32.908973 MongoDB write planned operation=node_and_cluster_update node=node_3 role=AGENT status=OFFLINE lamport=2373 vector={node_1:113, node_2:1162, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:34.693858 MongoDB write committed operation=node_and_cluster_update node=node_3 role=AGENT status=OFFLINE lamport=2373 vector={node_1:113, node_2:1162, node_3:1098} active_coordinator=node_2
+{
+  acknowledged: true,
+  insertedId: 'e5-particion-01-nodo2'
+}

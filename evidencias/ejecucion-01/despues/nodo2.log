@@ -1,0 +1,230 @@
+===== FASE DURANTE - NODO 2 =====
+2026-11-11T03:15:25+00:00
+node2
+===== IPTABLES PARTITION =====
+===== ESTADO MONGODB =====
+[
+  {
+    host: '100.88.34.28:27017',
+    state: 'PRIMARY',
+    health: 1,
+    self: false,
+    syncSource: '',
+    lastHeartbeatMessage: ''
+  },
+  {
+    host: '100.110.214.118:27017',
+    state: 'SECONDARY',
+    health: 1,
+    self: false,
+    syncSource: '100.124.47.95:27017',
+    lastHeartbeatMessage: ''
+  },
+  {
+    host: '100.124.47.95:27017',
+    state: 'SECONDARY',
+    health: 1,
+    self: true,
+    syncSource: '100.88.34.28:27017',
+    lastHeartbeatMessage: ''
+  }
+]
+===== HELLO =====
+{
+  topologyVersion: {
+    processId: ObjectId('6af3db3fa6114842aa17fd50'),
+    counter: Long('16')
+  },
+  hosts: [
+    '100.88.34.28:27017',
+    '100.110.214.118:27017',
+    '100.124.47.95:27017'
+  ],
+  setName: 'rs-grupo',
+  setVersion: 2,
+  isWritablePrimary: false,
+  secondary: true,
+  primary: '100.88.34.28:27017',
+  me: '100.124.47.95:27017',
+  lastWrite: {
+    opTime: { ts: Timestamp({ t: 1794366925, i: 1 }), t: Long('33') },
+    lastWriteDate: ISODate('2026-11-11T03:15:25.000Z'),
+    majorityOpTime: { ts: Timestamp({ t: 1794366925, i: 1 }), t: Long('33') },
+    majorityWriteDate: ISODate('2026-11-11T03:15:25.000Z')
+  },
+  maxBsonObjectSize: 16777216,
+  maxMessageSizeBytes: 48000000,
+  maxWriteBatchSize: 100000,
+  localTime: ISODate('2026-11-11T03:15:28.078Z'),
+  logicalSessionTimeoutMinutes: 30,
+  connectionId: 145,
+  minWireVersion: 0,
+  maxWireVersion: 29,
+  readOnly: false,
+  ok: 1,
+  '$clusterTime': {
+    clusterTime: Timestamp({ t: 1794366925, i: 1 }),
+    signature: {
+      hash: Binary.createFromBase64('AAAAAAAAAAAAAAAAAAAAAAAAAAA=', 0),
+      keyId: Long('0')
+    }
+  },
+  operationTime: Timestamp({ t: 1794366925, i: 1 })
+}
+===== INVENTARIO =====
+{
+  _id: 'cluster_metadata'
+}
+{
+  _id: 'e5-medicion-20261108-nodo1'
+}
+{
+  _id: 'e5-medicion-20261108-nodo2'
+}
+{
+  _id: 'e5-particion-01-nodo2'
+}
+{
+  _id: 'node_1',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_2',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_3',
+  node_role: 'COORDINATOR',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('2'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+===== LOG DE APLICACION =====
+2026/11/11 03:05:00.578546 gRPC server listening on 100.124.47.95:5002
+2026/11/11 03:05:00.994370 election state=waiting_for_coordinator higher_priority=1 acknowledgements=1
+2026/11/11 03:05:00.997626 node 2 started with 2 peer(s), MongoDB database=inventory collection=resources heartbeat=1s
+2026/11/11 03:05:01.262879 COORDINATOR received sender=3 coordinator=3 state=following
+2026/11/11 03:05:01.752350 MongoDB connection ready for inventory.resources
+2026/11/11 03:05:02.330848 machine capacity registered cpu_cores=1 memory_gb=1 bandwidth_mbps=1000
+2026/11/11 03:07:17.002147 heartbeat failed coordinator=3 error=heartbeat RPC to node 3: rpc error: code = DeadlineExceeded desc = context deadline exceeded, starting re-election
+2026/11/11 03:07:17.754747 node document sync failed, retrying: context deadline exceeded
+2026/11/11 03:07:23.015051 COORDINATOR failed sender=2 coordinator=2 target=1 address=100.110.214.118:5001 phase=rpc error=rpc error: code = DeadlineExceeded desc = context deadline exceeded
+2026/11/11 03:07:23.015219 heartbeat-triggered election state=coordinator coordinator=2 announcement_failures=[1 3]
+2026/11/11 03:07:23.015396 COORDINATOR failed sender=2 coordinator=2 target=3 address=100.88.34.28:5003 phase=dial error=context deadline exceeded
+2026/11/11 03:07:23.755256 node document sync failed, retrying: get node document node_2: timed out while checking out a connection from connection pool: context deadline exceeded; total connections: 3, maxPoolSize: 100, idle connections: 0, wait duration: 3.002004811s
+2026/11/11 03:07:26.346460 follower liveness sweep: mark node 1 offline: get node document node_1: timed out while checking out a connection from connection pool: context deadline exceeded; total connections: 3, maxPoolSize: 100, idle connections: 0, wait duration: 3.00136786s
+mark node 3 offline: get node document node_3: timed out while checking out a connection from connection pool: context deadline exceeded; total connections: 0, maxPoolSize: 100, idle connections: 0, wait duration: 1.752µs
+2026/11/11 03:07:26.350401 MongoDB write planned operation=node_and_cluster_update node=node_1 role=AGENT status=OFFLINE lamport=2371 vector={node_1:113, node_2:1160, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:26.756996 node document sync failed, retrying: get node document node_2: timed out while checking out a connection from connection pool: context deadline exceeded; total connections: 3, maxPoolSize: 100, idle connections: 0, wait duration: 3.001579375s
+2026/11/11 03:07:26.762548 MongoDB write planned operation=node_and_cluster_update node=node_2 role=COORDINATOR status=ONLINE lamport=2371 vector={node_1:113, node_2:1160, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:27.733673 MongoDB write planned operation=node_and_cluster_update node=node_1 role=AGENT status=ONLINE lamport=2372 vector={node_1:113, node_2:1161, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:32.906787 MongoDB write committed operation=node_and_cluster_update node=node_1 role=AGENT status=OFFLINE lamport=2371 vector={node_1:113, node_2:1160, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:32.907033 follower liveness sweep: mark node 3 offline: get node document node_3: calculated server-side timeout (0 ms) is less than or equal to 0 (network round-trip time stats: moving avg: 1.293088ms, min: 195.63µs, moving stddev: 1.188482ms): operation not sent to server, as Timeout would be exceeded: context deadline exceeded
+2026/11/11 03:07:32.907368 MongoDB write committed operation=node_and_cluster_update node=node_1 role=AGENT status=ONLINE lamport=2372 vector={node_1:113, node_2:1161, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:32.907674 MongoDB write committed operation=node_and_cluster_update node=node_2 role=COORDINATOR status=ONLINE lamport=2371 vector={node_1:113, node_2:1160, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:32.907724 coordinator document persisted node=2 role=COORDINATOR
+2026/11/11 03:07:32.908973 MongoDB write planned operation=node_and_cluster_update node=node_3 role=AGENT status=OFFLINE lamport=2373 vector={node_1:113, node_2:1162, node_3:1098} active_coordinator=node_2
+2026/11/11 03:07:34.693858 MongoDB write committed operation=node_and_cluster_update node=node_3 role=AGENT status=OFFLINE lamport=2373 vector={node_1:113, node_2:1162, node_3:1098} active_coordinator=node_2
+2026/11/11 03:12:46.761288 MongoDB write planned operation=cluster_metadata_update lamport=2375 vector={node_1:113, node_2:1163, node_3:1099} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:12:46.928508 MongoDB write committed operation=cluster_metadata_update lamport=2375 vector={node_1:113, node_2:1163, node_3:1099} active_coordinator=node_2
+2026/11/11 03:12:47.761960 MongoDB write planned operation=cluster_metadata_update lamport=2377 vector={node_1:113, node_2:1164, node_3:1100} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:12:47.908497 MongoDB write committed operation=cluster_metadata_update lamport=2377 vector={node_1:113, node_2:1164, node_3:1100} active_coordinator=node_2
+2026/11/11 03:12:48.762103 MongoDB write planned operation=cluster_metadata_update lamport=2379 vector={node_1:113, node_2:1165, node_3:1101} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:12:48.782764 MongoDB write planned operation=node_and_cluster_update node=node_1 role=AGENT status=ONLINE lamport=2380 vector={node_1:113, node_2:1166, node_3:1101} active_coordinator=node_2
+2026/11/11 03:12:48.918870 MongoDB write committed operation=cluster_metadata_update lamport=2379 vector={node_1:113, node_2:1165, node_3:1101} active_coordinator=node_2
+2026/11/11 03:12:49.046005 MongoDB write committed operation=node_and_cluster_update node=node_1 role=AGENT status=ONLINE lamport=2380 vector={node_1:113, node_2:1166, node_3:1101} active_coordinator=node_2
+2026/11/11 03:12:49.756287 MongoDB write planned operation=node_and_cluster_update node=node_2 role=COORDINATOR status=ONLINE lamport=2381 vector={node_1:113, node_2:1166, node_3:1102} active_coordinator=node_3
+2026/11/11 03:12:49.762822 MongoDB write planned operation=cluster_metadata_update lamport=2382 vector={node_1:113, node_2:1167, node_3:1102} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:12:50.018722 MongoDB write committed operation=node_and_cluster_update node=node_2 role=COORDINATOR status=ONLINE lamport=2381 vector={node_1:113, node_2:1166, node_3:1102} active_coordinator=node_3
+2026/11/11 03:12:50.018774 coordinator document persisted node=2 role=COORDINATOR
+2026/11/11 03:12:50.019063 MongoDB write committed operation=cluster_metadata_update lamport=2382 vector={node_1:113, node_2:1167, node_3:1102} active_coordinator=node_2
+2026/11/11 03:12:50.763026 MongoDB write planned operation=cluster_metadata_update lamport=2384 vector={node_1:113, node_2:1168, node_3:1103} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:12:50.946108 MongoDB write committed operation=cluster_metadata_update lamport=2384 vector={node_1:113, node_2:1168, node_3:1103} active_coordinator=node_2
+2026/11/11 03:12:51.762801 MongoDB write planned operation=cluster_metadata_update lamport=2386 vector={node_1:113, node_2:1169, node_3:1104} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:12:55.755706 node document sync failed, retrying: get node document node_2: server selection error: context deadline exceeded, current topology: { Type: ReplicaSetNoPrimary, Servers: [{ Addr: 100.110.214.118:27017, Type: RSSecondary, Average RTT: 146171833 }, { Addr: 100.124.47.95:27017, Type: RSSecondary, Average RTT: 832426 }, { Addr: 100.88.34.28:27017, Type: RSSecondary, Average RTT: 159604402 }, ] }
+2026/11/11 03:12:58.761041 node document sync failed, retrying: get node document node_2: server selection error: context deadline exceeded, current topology: { Type: ReplicaSetNoPrimary, Servers: [{ Addr: 100.110.214.118:27017, Type: RSSecondary, Average RTT: 154679119 }, { Addr: 100.124.47.95:27017, Type: RSSecondary, Average RTT: 832426 }, { Addr: 100.88.34.28:27017, Type: RSSecondary, Average RTT: 159604402 }, ] }
+2026/11/11 03:13:01.761932 node document sync failed, retrying: get node document node_2: server selection error: context deadline exceeded, current topology: { Type: ReplicaSetNoPrimary, Servers: [{ Addr: 100.110.214.118:27017, Type: RSSecondary, Average RTT: 154679119 }, { Addr: 100.124.47.95:27017, Type: RSSecondary, Average RTT: 832426 }, { Addr: 100.88.34.28:27017, Type: RSSecondary, Average RTT: 157370716 }, ] }
+2026/11/11 03:13:04.761662 MongoDB write planned operation=cluster_metadata_update lamport=2388 vector={node_1:113, node_2:1170, node_3:1105} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:04.902913 MongoDB write committed operation=cluster_metadata_update lamport=2388 vector={node_1:113, node_2:1170, node_3:1105} active_coordinator=node_2
+2026/11/11 03:13:05.760551 MongoDB write planned operation=cluster_metadata_update lamport=2390 vector={node_1:113, node_2:1171, node_3:1106} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:05.992413 MongoDB write committed operation=cluster_metadata_update lamport=2390 vector={node_1:113, node_2:1171, node_3:1106} active_coordinator=node_2
+2026/11/11 03:13:06.762436 MongoDB write planned operation=cluster_metadata_update lamport=2392 vector={node_1:113, node_2:1172, node_3:1107} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:06.907453 MongoDB write committed operation=cluster_metadata_update lamport=2392 vector={node_1:113, node_2:1172, node_3:1107} active_coordinator=node_2
+2026/11/11 03:13:07.764172 MongoDB write planned operation=cluster_metadata_update lamport=2394 vector={node_1:113, node_2:1173, node_3:1108} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:07.943688 MongoDB write committed operation=cluster_metadata_update lamport=2394 vector={node_1:113, node_2:1173, node_3:1108} active_coordinator=node_2
+2026/11/11 03:13:08.761121 MongoDB write planned operation=cluster_metadata_update lamport=2396 vector={node_1:113, node_2:1174, node_3:1109} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:08.918054 MongoDB write committed operation=cluster_metadata_update lamport=2396 vector={node_1:113, node_2:1174, node_3:1109} active_coordinator=node_2
+2026/11/11 03:13:09.761996 MongoDB write planned operation=cluster_metadata_update lamport=2398 vector={node_1:113, node_2:1175, node_3:1110} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:09.920657 MongoDB write committed operation=cluster_metadata_update lamport=2398 vector={node_1:113, node_2:1175, node_3:1110} active_coordinator=node_2
+2026/11/11 03:13:10.761446 MongoDB write planned operation=cluster_metadata_update lamport=2400 vector={node_1:113, node_2:1176, node_3:1111} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:10.909810 MongoDB write committed operation=cluster_metadata_update lamport=2400 vector={node_1:113, node_2:1176, node_3:1111} active_coordinator=node_2
+2026/11/11 03:13:11.761458 MongoDB write planned operation=cluster_metadata_update lamport=2402 vector={node_1:113, node_2:1177, node_3:1112} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:11.908684 MongoDB write committed operation=cluster_metadata_update lamport=2402 vector={node_1:113, node_2:1177, node_3:1112} active_coordinator=node_2
+2026/11/11 03:13:12.761423 MongoDB write planned operation=cluster_metadata_update lamport=2404 vector={node_1:113, node_2:1178, node_3:1113} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:12.928963 MongoDB write committed operation=cluster_metadata_update lamport=2404 vector={node_1:113, node_2:1178, node_3:1113} active_coordinator=node_2
+2026/11/11 03:13:13.761267 MongoDB write planned operation=cluster_metadata_update lamport=2406 vector={node_1:113, node_2:1179, node_3:1114} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:13.917607 MongoDB write committed operation=cluster_metadata_update lamport=2406 vector={node_1:113, node_2:1179, node_3:1114} active_coordinator=node_2
+2026/11/11 03:13:14.762580 MongoDB write planned operation=cluster_metadata_update lamport=2408 vector={node_1:113, node_2:1180, node_3:1115} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:16.732107 MongoDB write committed operation=cluster_metadata_update lamport=2408 vector={node_1:113, node_2:1180, node_3:1115} active_coordinator=node_2
+2026/11/11 03:13:16.881190 MongoDB write planned operation=cluster_metadata_update lamport=2410 vector={node_1:113, node_2:1181, node_3:1116} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:17.178711 MongoDB write committed operation=cluster_metadata_update lamport=2410 vector={node_1:113, node_2:1181, node_3:1116} active_coordinator=node_2
+2026/11/11 03:13:18.891035 MongoDB write planned operation=cluster_metadata_update lamport=2412 vector={node_1:113, node_2:1182, node_3:1117} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:19.338053 MongoDB write committed operation=cluster_metadata_update lamport=2412 vector={node_1:113, node_2:1182, node_3:1117} active_coordinator=node_2
+2026/11/11 03:13:20.897373 MongoDB write planned operation=cluster_metadata_update lamport=2414 vector={node_1:113, node_2:1183, node_3:1118} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:21.189339 MongoDB write committed operation=cluster_metadata_update lamport=2414 vector={node_1:113, node_2:1183, node_3:1118} active_coordinator=node_2
+2026/11/11 03:13:22.894388 MongoDB write planned operation=cluster_metadata_update lamport=2416 vector={node_1:113, node_2:1184, node_3:1119} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:23.197351 MongoDB write committed operation=cluster_metadata_update lamport=2416 vector={node_1:113, node_2:1184, node_3:1119} active_coordinator=node_2
+2026/11/11 03:13:24.899083 MongoDB write planned operation=cluster_metadata_update lamport=2418 vector={node_1:113, node_2:1185, node_3:1120} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:25.186477 MongoDB write committed operation=cluster_metadata_update lamport=2418 vector={node_1:113, node_2:1185, node_3:1120} active_coordinator=node_2
+2026/11/11 03:13:26.901202 MongoDB write planned operation=cluster_metadata_update lamport=2420 vector={node_1:113, node_2:1186, node_3:1121} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:27.186531 MongoDB write committed operation=cluster_metadata_update lamport=2420 vector={node_1:113, node_2:1186, node_3:1121} active_coordinator=node_2
+2026/11/11 03:13:28.896462 MongoDB write planned operation=cluster_metadata_update lamport=2422 vector={node_1:113, node_2:1187, node_3:1122} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:29.195675 MongoDB write committed operation=cluster_metadata_update lamport=2422 vector={node_1:113, node_2:1187, node_3:1122} active_coordinator=node_2
+2026/11/11 03:13:30.897228 MongoDB write planned operation=cluster_metadata_update lamport=2424 vector={node_1:113, node_2:1188, node_3:1123} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:31.192071 MongoDB write committed operation=cluster_metadata_update lamport=2424 vector={node_1:113, node_2:1188, node_3:1123} active_coordinator=node_2
+2026/11/11 03:13:32.895311 MongoDB write planned operation=cluster_metadata_update lamport=2426 vector={node_1:113, node_2:1189, node_3:1124} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:33.187240 MongoDB write committed operation=cluster_metadata_update lamport=2426 vector={node_1:113, node_2:1189, node_3:1124} active_coordinator=node_2
+2026/11/11 03:13:34.893562 MongoDB write planned operation=cluster_metadata_update lamport=2428 vector={node_1:113, node_2:1190, node_3:1125} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:35.186475 MongoDB write committed operation=cluster_metadata_update lamport=2428 vector={node_1:113, node_2:1190, node_3:1125} active_coordinator=node_2
+2026/11/11 03:13:36.897472 MongoDB write planned operation=cluster_metadata_update lamport=2430 vector={node_1:113, node_2:1191, node_3:1126} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:37.188787 MongoDB write committed operation=cluster_metadata_update lamport=2430 vector={node_1:113, node_2:1191, node_3:1126} active_coordinator=node_2
+2026/11/11 03:13:38.894417 MongoDB write planned operation=cluster_metadata_update lamport=2432 vector={node_1:113, node_2:1192, node_3:1127} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:39.189084 MongoDB write committed operation=cluster_metadata_update lamport=2432 vector={node_1:113, node_2:1192, node_3:1127} active_coordinator=node_2
+2026/11/11 03:13:40.894986 MongoDB write planned operation=cluster_metadata_update lamport=2434 vector={node_1:113, node_2:1193, node_3:1128} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:41.190489 MongoDB write committed operation=cluster_metadata_update lamport=2434 vector={node_1:113, node_2:1193, node_3:1128} active_coordinator=node_2
+2026/11/11 03:13:42.894477 MongoDB write planned operation=cluster_metadata_update lamport=2436 vector={node_1:113, node_2:1194, node_3:1129} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:43.194750 MongoDB write committed operation=cluster_metadata_update lamport=2436 vector={node_1:113, node_2:1194, node_3:1129} active_coordinator=node_2
+2026/11/11 03:13:45.048252 MongoDB write planned operation=cluster_metadata_update lamport=2438 vector={node_1:113, node_2:1195, node_3:1130} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:45.436966 MongoDB write committed operation=cluster_metadata_update lamport=2438 vector={node_1:113, node_2:1195, node_3:1130} active_coordinator=node_2
+2026/11/11 03:13:46.894732 MongoDB write planned operation=cluster_metadata_update lamport=2440 vector={node_1:113, node_2:1196, node_3:1131} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:47.197979 MongoDB write committed operation=cluster_metadata_update lamport=2440 vector={node_1:113, node_2:1196, node_3:1131} active_coordinator=node_2
+2026/11/11 03:13:48.890440 MongoDB write planned operation=cluster_metadata_update lamport=2442 vector={node_1:113, node_2:1197, node_3:1132} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:49.194744 MongoDB write committed operation=cluster_metadata_update lamport=2442 vector={node_1:113, node_2:1197, node_3:1132} active_coordinator=node_2
+2026/11/11 03:13:50.892234 MongoDB write planned operation=cluster_metadata_update lamport=2444 vector={node_1:113, node_2:1198, node_3:1133} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:51.186076 MongoDB write committed operation=cluster_metadata_update lamport=2444 vector={node_1:113, node_2:1198, node_3:1133} active_coordinator=node_2
+2026/11/11 03:13:52.890606 MongoDB write planned operation=cluster_metadata_update lamport=2446 vector={node_1:113, node_2:1199, node_3:1134} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:53.186756 MongoDB write committed operation=cluster_metadata_update lamport=2446 vector={node_1:113, node_2:1199, node_3:1134} active_coordinator=node_2
+2026/11/11 03:13:54.894623 MongoDB write planned operation=cluster_metadata_update lamport=2448 vector={node_1:113, node_2:1200, node_3:1135} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:55.179863 MongoDB write committed operation=cluster_metadata_update lamport=2448 vector={node_1:113, node_2:1200, node_3:1135} active_coordinator=node_2
+2026/11/11 03:13:56.895547 MongoDB write planned operation=cluster_metadata_update lamport=2450 vector={node_1:113, node_2:1201, node_3:1136} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:57.195269 MongoDB write committed operation=cluster_metadata_update lamport=2450 vector={node_1:113, node_2:1201, node_3:1136} active_coordinator=node_2
+2026/11/11 03:13:58.893901 MongoDB write planned operation=cluster_metadata_update lamport=2452 vector={node_1:113, node_2:1202, node_3:1137} active_coordinator=node_2 last_modified_by=node_2
+2026/11/11 03:13:59.248244 MongoDB write committed operation=cluster_metadata_update lamport=2452 vector={node_1:113, node_2:1202, node_3:1137} active_coordinator=node_2
+2026/11/11 03:14:05.665007 COORDINATOR received sender=3 coordinator=3 state=following
+2026/11/11 03:14:06.070861 follower registration after coordinator change failed: rpc error: code = Unavailable desc = node registration persistence is unavailable
+2026/11/11 03:14:06.152952 node document sync failed, retrying: rpc error: code = Unavailable desc = node registration persistence is unavailable

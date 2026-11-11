@@ -1,0 +1,139 @@
+===== FASE DURANTE - NODO 1 =====
+2026-11-11T03:15:59+00:00
+node1
+===== IPTABLES PARTITION =====
+===== ESTADO MONGODB =====
+[
+  {
+    host: '100.88.34.28:27017',
+    state: 'PRIMARY',
+    health: 1,
+    self: false,
+    syncSource: '',
+    lastHeartbeatMessage: ''
+  },
+  {
+    host: '100.110.214.118:27017',
+    state: 'SECONDARY',
+    health: 1,
+    self: true,
+    syncSource: '100.124.47.95:27017',
+    lastHeartbeatMessage: ''
+  },
+  {
+    host: '100.124.47.95:27017',
+    state: 'SECONDARY',
+    health: 1,
+    self: false,
+    syncSource: '100.88.34.28:27017',
+    lastHeartbeatMessage: ''
+  }
+]
+===== HELLO =====
+{
+  topologyVersion: {
+    processId: ObjectId('6af3db3d68d59e9ca796d43d'),
+    counter: Long('12')
+  },
+  hosts: [
+    '100.88.34.28:27017',
+    '100.110.214.118:27017',
+    '100.124.47.95:27017'
+  ],
+  setName: 'rs-grupo',
+  setVersion: 2,
+  isWritablePrimary: false,
+  secondary: true,
+  primary: '100.88.34.28:27017',
+  me: '100.110.214.118:27017',
+  lastWrite: {
+    opTime: { ts: Timestamp({ t: 1794366955, i: 1 }), t: Long('33') },
+    lastWriteDate: ISODate('2026-11-11T03:15:55.000Z'),
+    majorityOpTime: { ts: Timestamp({ t: 1794366955, i: 1 }), t: Long('33') },
+    majorityWriteDate: ISODate('2026-11-11T03:15:55.000Z')
+  },
+  maxBsonObjectSize: 16777216,
+  maxMessageSizeBytes: 48000000,
+  maxWriteBatchSize: 100000,
+  localTime: ISODate('2026-11-11T03:16:01.941Z'),
+  logicalSessionTimeoutMinutes: 30,
+  connectionId: 164,
+  minWireVersion: 0,
+  maxWireVersion: 29,
+  readOnly: false,
+  ok: 1,
+  '$clusterTime': {
+    clusterTime: Timestamp({ t: 1794366955, i: 1 }),
+    signature: {
+      hash: Binary.createFromBase64('AAAAAAAAAAAAAAAAAAAAAAAAAAA=', 0),
+      keyId: Long('0')
+    }
+  },
+  operationTime: Timestamp({ t: 1794366955, i: 1 })
+}
+===== INVENTARIO =====
+{
+  _id: 'cluster_metadata'
+}
+{
+  _id: 'e5-medicion-20261108-nodo1'
+}
+{
+  _id: 'e5-medicion-20261108-nodo2'
+}
+{
+  _id: 'e5-particion-01-nodo2'
+}
+{
+  _id: 'node_1',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_2',
+  node_role: 'AGENT',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('1'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+{
+  _id: 'node_3',
+  node_role: 'COORDINATOR',
+  resources: {
+    cpu_cores: Long('1'),
+    memory_gb: Long('2'),
+    bandwidth_mbps: Long('1000')
+  },
+  status: 'ONLINE'
+}
+===== LOG DE APLICACION =====
+2026/11/11 03:04:55.802154 gRPC server listening on 100.110.214.118:5001
+2026/11/11 03:04:56.368588 COORDINATOR received sender=3 coordinator=3 state=following
+2026/11/11 03:04:58.800998 election state=waiting_for_coordinator higher_priority=2 acknowledgements=1
+2026/11/11 03:04:58.801668 node 1 started with 2 peer(s), MongoDB database=inventory collection=resources heartbeat=1s
+2026/11/11 03:04:59.489533 MongoDB connection ready for inventory.resources
+2026/11/11 03:04:59.985130 machine capacity registered cpu_cores=1 memory_gb=1 bandwidth_mbps=1000
+2026/11/11 03:05:01.179583 COORDINATOR received sender=3 coordinator=3 state=following
+2026/11/11 03:05:01.517915 node document synchronized after coordinator change node=1 role=AGENT
+2026/11/11 03:07:17.330438 node document sync failed, retrying: context deadline exceeded
+2026/11/11 03:07:17.804491 heartbeat failed coordinator=3 error=heartbeat dial to node 3: context deadline exceeded, starting re-election
+2026/11/11 03:07:20.335236 node document sync failed, retrying: context deadline exceeded
+2026/11/11 03:07:20.364980 COORDINATOR received sender=2 coordinator=2 state=following
+2026/11/11 03:07:23.066900 follower registration after coordinator change failed: rpc error: code = Canceled desc = context canceled
+2026/11/11 03:07:24.329253 node document sync failed, retrying: rpc error: code = DeadlineExceeded desc = context deadline exceeded
+2026/11/11 03:07:27.338577 node document sync failed, retrying: rpc error: code = DeadlineExceeded desc = context deadline exceeded
+2026/11/11 03:07:30.340349 node document sync failed, retrying: rpc error: code = DeadlineExceeded desc = context deadline exceeded
+2026/11/11 03:12:55.335211 node document sync failed, retrying: rpc error: code = DeadlineExceeded desc = context deadline exceeded
+2026/11/11 03:12:58.335749 node document sync failed, retrying: rpc error: code = DeadlineExceeded desc = context deadline exceeded
+2026/11/11 03:13:01.338457 node document sync failed, retrying: rpc error: code = DeadlineExceeded desc = context deadline exceeded
+2026/11/11 03:14:05.549846 COORDINATOR received sender=3 coordinator=3 state=following
+2026/11/11 03:14:05.770834 node document sync failed, retrying: rpc error: code = FailedPrecondition desc = only the active coordinator can write
+2026/11/11 03:14:05.881309 follower registration after coordinator change failed: rpc error: code = Unavailable desc = node registration persistence is unavailable
